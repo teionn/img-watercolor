@@ -68,18 +68,35 @@ GUI 支持拖放图片、全部滑杆参数、后台线程渲染（各中间图�
 **用自己的 Photoshop 笔刷**：把笔尖导出为灰度 PNG（白=着色区），
 传路径即可：`python run.py input/cat.png --hard-brush my_brush.png`。
 
+## Rust 版（桌面 & iOS 开发主线）
+
+算法本体已移植到 pure Rust 的 **`crates/painterly-core`**
+（不依赖 OpenCV / numpy，可直接嵌入桌面与 iOS）。
+路线图见 [doc/roadmap.md](doc/roadmap.md)（日本語）。
+
+```bash
+cargo run --release -p painterly-cli -- input/cat.png   # CLI（与 run.py 同一套参数）
+
+cd apps/desktop/src-tauri && cargo tauri dev            # 桌面应用（Tauri 2）
+```
+
 ## 代码结构
 
 ```
-painterly/
+crates/
+  painterly-core/    # 核心算法（pure Rust，下方 painterly/ 的移植）
+  painterly-cli/     # 命令行（run.py 对应）
+apps/
+  desktop/           # 桌面应用（Tauri 2，Windows/macOS/Linux）
+painterly/           # Python 参考实现
   palette.py   # K-Means 调色板量化、Posterize 边界、色板/色环可视化
   flowmap.py   # 灰度模糊 → Sobel → 法线图 / 结构张量流场
   density.py   # 密度图（梯度 + 色块边界）→ 笔刷大小/三档软硬调度
   brushes.py   # 程序化笔刷贴图（triangle/flat/soft/oil/pastel/charcoal）+ 自定义 PNG
   strokes.py   # 沿流场走线、由暗到亮排序、湿混色、收笔渐隐、调试视图
   pipeline.py  # 编排 + 全部中间图落盘 + GUI 回调钩子
-run.py         # 命令行入口
-gui.py         # PySide6 图形界面
+run.py         # 命令行入口（Python）
+gui.py         # PySide6 图形界面（Python，将由 Tauri 版替代）
 ```
 
 ## 调参建议

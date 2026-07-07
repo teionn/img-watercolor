@@ -75,18 +75,35 @@ GUI は画像のドラッグ＆ドロップ、全パラメータのスライダ�
 （白 = 着色部）として書き出し、パスを渡すだけ：
 `python run.py input/cat.png --hard-brush my_brush.png`
 
+## Rust 版（デスクトップ & iOS 展開の本流）
+
+アルゴリズム本体は pure Rust の **`crates/painterly-core`** に移植済み
+（OpenCV / numpy 非依存 → デスクトップにも iOS にもそのまま組み込める）。
+展開計画の詳細は [doc/roadmap.md](doc/roadmap.md) を参照。
+
+```bash
+cargo run --release -p painterly-cli -- input/cat.png   # CLI（run.py と同じオプション体系）
+
+cd apps/desktop/src-tauri && cargo tauri dev            # デスクトップアプリ（Tauri 2）
+```
+
 ## コード構成
 
 ```
-painterly/
+crates/
+  painterly-core/    # コアアルゴリズム（pure Rust、下記 painterly/ の移植）
+  painterly-cli/     # コマンドライン（run.py 相当）
+apps/
+  desktop/           # デスクトップアプリ（Tauri 2、Windows/macOS/Linux）
+painterly/           # Python 参照実装
   palette.py   # k-means による減色、ポスタライズ境界線、パレット可視化
   flowmap.py   # ガウスぼかし → Sobel → 法線マップ / 構造テンソルによるフローマップ
   density.py   # 密度マップ（勾配 + 境界線）→ ブラシサイズ・3 系統の割り当て
   brushes.py   # プロシージャルなブラシテクスチャ + カスタム PNG の読み込み
   strokes.py   # フローに沿ったトレース、暗→明ソート、ウェットブレンディング、入り抜き、デバッグビュー
   pipeline.py  # パイプライン統括 + 中間画像の書き出し + GUI 用フック
-run.py         # コマンドラインエントリポイント
-gui.py         # PySide6 GUI
+run.py         # コマンドラインエントリポイント（Python）
+gui.py         # PySide6 GUI（Python、Tauri 版に置き換え予定）
 ```
 
 ## パラメータの目安

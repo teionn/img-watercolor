@@ -13,3 +13,7 @@ output/
 
 # 打包产物
 *.zip
+
+# Rust / Tauri
+target/
+apps/desktop/src-tauri/gen/schemas/
