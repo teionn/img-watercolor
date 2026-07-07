@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+.venv/
+
+# 生成物：input/ 用 scripts/fetch_samples.py 重建，output/ 是渲染结果
+input/
+output/
+
+# 个人笔记 / 会话记录 / IDE
+.remember/
+.claude/
+.idea/
+
+# 打包产物
+*.zip
