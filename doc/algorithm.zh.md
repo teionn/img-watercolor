@@ -1,6 +1,6 @@
 # 算法说明：基于流场的笔触绘画渲染
 
-> 日本語版: [algorithm.ja.md](algorithm.ja.md)
+> 日本語版: [algorithm.md](algorithm.md)
 
 把照片转换成油画速涂风格的算法。属于 **Stroke-Based Rendering (SBR)** 家族
 （多尺寸笔触的经典做法见 Hertzmann 1998，流场平滑见 Kang 等人的 Edge Tangent Flow），
