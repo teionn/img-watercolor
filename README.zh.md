@@ -86,8 +86,10 @@ cd apps/desktop/src-tauri && cargo tauri dev            # 桌面应用（Tauri 2
 crates/
   painterly-core/    # 核心算法（pure Rust，下方 painterly/ 的移植）
   painterly-cli/     # 命令行（run.py 对应）
+  painterly-ffi/     # UniFFI 绑定（iOS / Swift）
 apps/
   desktop/           # 桌面应用（Tauri 2，Windows/macOS/Linux）
+  ios/               # iOS 应用（SwiftUI，构建步骤见 apps/ios/README.md）
 painterly/           # Python 参考实现
   palette.py   # K-Means 调色板量化、Posterize 边界、色板/色环可视化
   flowmap.py   # 灰度模糊 → Sobel → 法线图 / 结构张量流场

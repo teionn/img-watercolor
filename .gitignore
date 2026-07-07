@@ -17,3 +17,9 @@ output/
 # Rust / Tauri
 target/
 apps/desktop/src-tauri/gen/schemas/
+
+# iOS（生成物: build-xcframework.sh / xcodegen が作る）
+apps/ios/Generated/
+apps/ios/Frameworks/
+apps/ios/*.xcodeproj/
+apps/ios/DerivedData/

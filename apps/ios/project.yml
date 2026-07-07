@@ -1,0 +1,36 @@
+# XcodeGen プロジェクト定義。
+# 事前に scripts/build-xcframework.sh を実行してから `xcodegen generate` すること
+# （Generated/ と Frameworks/ はそのスクリプトが作る）。
+name: ImgWatercolor
+options:
+  bundleIdPrefix: com.imgwatercolor
+  deploymentTarget:
+    iOS: "16.0"
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+targets:
+  ImgWatercolor:
+    type: application
+    platform: iOS
+    sources:
+      - Sources
+      - Generated
+    dependencies:
+      - framework: Frameworks/PainterlyFFI.xcframework
+        embed: false
+    info:
+      path: Info.plist
+      properties:
+        CFBundleDisplayName: img-watercolor
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        NSPhotoLibraryAddUsageDescription: 完成した絵を写真ライブラリに保存します。
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.imgwatercolor.ios
+        TARGETED_DEVICE_FAMILY: "1,2"
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: true

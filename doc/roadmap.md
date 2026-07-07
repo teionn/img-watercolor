@@ -33,21 +33,24 @@ painterly-core (pure Rust / 依存は image・rand のみ)
   - [ ] レンダリングのキャンセル操作（コアにキャンセルフラグを追加）
   - [ ] CI（GitHub Actions で Windows/macOS/Linux のバンドル生成）
 
-## フェーズ 3: iOS（SwiftUI + UniFFI）— 未着手
+## フェーズ 3: iOS（SwiftUI + UniFFI）— スキャフォールド済
 
-計画:
-
-1. `crates/painterly-ffi` を追加し [UniFFI](https://mozilla.github.io/uniffi-rs/) で
-   Swift バインディングを生成（API は `render(imageData, params) -> stages/progress/result`
-   のコールバック形式。desktop の lib.rs と同じ粒度）。
-2. `cargo build --target aarch64-apple-ios` で静的ライブラリ化し、
-   XCFramework（device + simulator）にまとめる。
-3. `apps/ios/` に SwiftUI アプリ:
-   - PhotosPicker で写真読み込み → パラメータシート（スライダー）→ レンダリング
-   - 中間ステージのサムネイル、描画過程のアニメーション再生
-   - 写真ライブラリへの保存・共有シート
-4. パフォーマンス: キャンバス解像度 360px なら A 系チップで 1 秒未満の見込み
-   （コアはシングルスレッドでも Python 比 ~30 倍。必要なら rayon を feature 追加）。
+- `crates/painterly-ffi`: UniFFI（proc-macro 方式）の Swift 向け API。
+  `render(imageBytes, params, observer)` のブロッキング呼び出し +
+  `RenderObserver` コールバック（onStage / onProgress）。
+  Linux 上でコンパイルとバインディング生成を確認済み。
+- `apps/ios/`: SwiftUI アプリ（PhotosPicker、パラメータシート、
+  ステージサムネイル、描画過程のライブ表示とリプレイ、写真ライブラリ保存）。
+  Xcode プロジェクトは XcodeGen（project.yml）で生成、
+  Rust 側は scripts/build-xcframework.sh で XCFramework 化。
+- 残タスク:
+  - [ ] macOS + Xcode 実機での初回ビルドと動作確認（この環境では Apple SDK が
+        使えないため Swift のコンパイルは未検証）
+  - [ ] Bundle ID / Team ID の正式決定（現状 com.imgwatercolor.ios）
+  - [ ] アプリアイコン・スクリーンショットなどストア資材
+  - [ ] レンダリングのキャンセル、iPad レイアウト最適化
+  - [ ] パフォーマンス計測: キャンバス 360px なら A 系チップで 1 秒未満の見込み
+        （必要なら rayon を feature 追加）
 
 留意点:
 

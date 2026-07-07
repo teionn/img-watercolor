@@ -93,8 +93,10 @@ cd apps/desktop/src-tauri && cargo tauri dev            # デスクトップア�
 crates/
   painterly-core/    # コアアルゴリズム（pure Rust、下記 painterly/ の移植）
   painterly-cli/     # コマンドライン（run.py 相当）
+  painterly-ffi/     # UniFFI バインディング（iOS / Swift 向け）
 apps/
   desktop/           # デスクトップアプリ（Tauri 2、Windows/macOS/Linux）
+  ios/               # iOS アプリ（SwiftUI、ビルド手順は apps/ios/README.md）
 painterly/           # Python 参照実装
   palette.py   # k-means による減色、ポスタライズ境界線、パレット可視化
   flowmap.py   # ガウスぼかし → Sobel → 法線マップ / 構造テンソルによるフローマップ
