@@ -95,6 +95,7 @@
 | posterize_blur | 2.0 | 量化前高斯 σ |
 | normal_blur | 8.0 | 求梯度前高斯 σ |
 | brush_size | 15 | 基准笔刷半径（画布 px） |
+| brush_length | 3.0 | 笔触长度上限（半径的倍数）；调低成点彩短笔，调高成流动长笔 |
 | hard/standard/soft_brush | triangle/flat/soft | 三档笔刷贴图 |
 | strokes_scale | 1.0 | 笔触密度倍率 |
 | hard/standard_quantile | 0.85 / 0.55 | 笔刷档位的密度分位数阈值 |

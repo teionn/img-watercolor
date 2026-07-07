@@ -177,6 +177,7 @@ class MainWindow(QMainWindow):
         self.p_poster_blur = ParamSlider("Posterize Blur", 0, 8, 2, scale=10, fmt="{:.1f}")
         self.p_normal_blur = ParamSlider("Normal Blur", 0.5, 20, 8, scale=10, fmt="{:.1f}")
         self.p_brush_size = ParamSlider("Brush Size", 4, 40, 15, fmt="{:d}", suffix=" px")
+        self.p_brush_len = ParamSlider("Brush Length", 1.0, 10.0, 3.0, scale=10, fmt="{:.1f}", suffix="x")
         self.p_strokes = ParamSlider("Strokes", 0.3, 3.0, 1.0, scale=100, fmt="{:.1f}", suffix="x")
         self.p_wet = ParamSlider("Wet", 0.0, 0.6, 0.18, scale=100, fmt="{:.2f}")
 
@@ -197,8 +198,9 @@ class MainWindow(QMainWindow):
         params.addLayout(self._labeled("Standard Brush", self.c_standard), 1, 3)
         params.addLayout(self._labeled("Soft Brush", self.c_soft), 2, 0)
         params.addWidget(self.p_brush_size, 2, 1)
-        params.addWidget(self.p_strokes, 2, 2)
-        params.addWidget(self.p_wet, 2, 3)
+        params.addWidget(self.p_brush_len, 2, 2)
+        params.addWidget(self.p_strokes, 2, 3)
+        params.addWidget(self.p_wet, 3, 0)
         root.addLayout(params)
 
         actions = QHBoxLayout()
@@ -287,6 +289,7 @@ class MainWindow(QMainWindow):
             posterize_blur=self.p_poster_blur.value(),
             normal_blur=self.p_normal_blur.value(),
             brush_size=self.p_brush_size.value(),
+            brush_length=self.p_brush_len.value(),
             hard_brush=self.c_hard.currentText().lower(),
             standard_brush=self.c_standard.currentText().lower(),
             soft_brush=self.c_soft.currentText().lower(),

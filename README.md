@@ -58,6 +58,7 @@ GUI は画像のドラッグ＆ドロップ、全パラメータのスライダ�
 | `--posterize-blur` | 2 | 減色前のガウシアン σ |
 | `--normal-blur` | 8 | 勾配計算前のガウシアン σ |
 | `--brush-size` | 15 | 基準ブラシ半径（キャンバス px） |
+| `--brush-length` | 3.0 | ストローク長の上限（半径の倍数）。実際は色領域の境界で打ち切られる |
 | `--hard-brush` | triangle | 輪郭・高密度領域用（triangle/charcoal/…） |
 | `--standard-brush` | flat | 中密度領域用 |
 | `--soft-brush` | soft | 広い面・低コントラスト領域用（soft/oil/pastel） |

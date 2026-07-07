@@ -28,6 +28,8 @@ def main():
     ap.add_argument("--posterize-blur", type=float, default=2.0, help="量化前高斯σ")
     ap.add_argument("--normal-blur", type=float, default=8.0, help="求梯度前高斯σ")
     ap.add_argument("--brush-size", type=float, default=15, help="基准笔刷半径（画布 px）")
+    ap.add_argument("--brush-length", type=float, default=3.0,
+                    help="笔触长度上限（半径的倍数），实际还受色块边界截断")
     ap.add_argument("--hard-brush", default="triangle", help=f"硬笔刷: {BUILTIN_BRUSHES} 或灰度 PNG 路径")
     ap.add_argument("--standard-brush", default="flat", help=f"标准笔刷: {BUILTIN_BRUSHES} 或灰度 PNG 路径")
     ap.add_argument("--soft-brush", default="soft", help=f"软笔刷: {BUILTIN_BRUSHES} 或灰度 PNG 路径")
@@ -57,7 +59,8 @@ def main():
             pixels=args.pixels, resolution=args.resolution,
             palette=args.palette, color_space=args.color_wheel,
             posterize_blur=args.posterize_blur, normal_blur=args.normal_blur,
-            brush_size=args.brush_size, hard_brush=args.hard_brush,
+            brush_size=args.brush_size, brush_length=args.brush_length,
+            hard_brush=args.hard_brush,
             standard_brush=args.standard_brush, soft_brush=args.soft_brush,
             strokes_scale=args.strokes, wet=args.wet,
             out_long=args.out_long, seed=args.seed,

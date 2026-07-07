@@ -122,6 +122,7 @@ Kang らの Edge Tangent Flow が古典）。設計の出発点は、画家が�
 | posterize_blur | 2.0 | 減色前のガウシアン σ |
 | normal_blur | 8.0 | 勾配計算前のガウシアン σ |
 | brush_size | 15 | 基準ブラシ半径（キャンバス px） |
+| brush_length | 3.0 | ストローク長の上限（半径に対する倍率）。低くすると点描風の短いタッチ、高くすると流れる長いタッチに |
 | hard/standard/soft_brush | triangle/flat/soft | 3 系統のブラシテクスチャ |
 | strokes_scale | 1.0 | ストローク密度の倍率 |
 | hard/standard_quantile | 0.85 / 0.55 | ブラシ種別を分けるパーセンタイルしきい値 |

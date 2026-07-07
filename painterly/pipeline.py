@@ -24,6 +24,7 @@ PARAMS_DEFAULT = dict(
     posterize_blur=2.0,     # 量化前的高斯 σ（px，@pixels 分辨率）
     normal_blur=8.0,        # 求梯度前的高斯 σ（px，@resolution 分辨率）
     brush_size=15,          # 基准笔刷半径（画布坐标系 px）
+    brush_length=3.0,       # 笔触长度上限（半径的倍数），实际还受色块边界截断
     hard_brush="triangle",  # 轮廓/高密度处
     standard_brush="flat",  # 中等密度
     soft_brush="soft",      # 大面/低反差处
@@ -124,6 +125,7 @@ def run_pipeline(img_rgb: np.ndarray, out_dir, on_stage=None, on_paint_progress=
         style_of=lambda d: p["soft_brush"],
         tag_of=lambda d: "soft",
         side_sample_prob=0.15,
+        max_len_factor=p["brush_length"],
     )
 
     # 主层：密度 → 尺寸 / 硬标软三档
@@ -133,6 +135,7 @@ def run_pipeline(img_rgb: np.ndarray, out_dir, on_stage=None, on_paint_progress=
         style_of=style_of,
         tag_of=tag_of,
         side_sample_prob=p["side_sample_prob"],
+        max_len_factor=p["brush_length"],
     )
 
     # 细节层：只在高密度区补小号硬刷
@@ -144,6 +147,7 @@ def run_pipeline(img_rgb: np.ndarray, out_dir, on_stage=None, on_paint_progress=
         tag_of=lambda d: "hard",
         mask=detail_mask,
         side_sample_prob=0.15,
+        max_len_factor=p["brush_length"],
     )
 
     all_strokes = under + main + detail
