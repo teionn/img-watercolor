@@ -42,6 +42,9 @@
       <label>彩度 <span id="v-saturation">1.15</span>×
         <input type="range" id="p-saturation" min="0.8" max="1.6" step="0.05" value="1.15" />
       </label>
+      <label>奥行きディテール <span id="v-depth_detail">0.50</span>
+        <input type="range" id="p-depth_detail" min="0" max="1" step="0.05" value="0.5" />
+      </label>
       <label>出力長辺 <span id="v-out_long">1080</span>px
         <input type="range" id="p-out_long" min="480" max="2160" step="40" value="1080" />
       </label>
@@ -68,6 +71,9 @@
       </label>
       <label class="row">色空間
         <select id="p-color_space"><option selected>rgb</option><option>lab</option></select>
+      </label>
+      <label class="row">奥行き反転
+        <input type="checkbox" id="p-depth_invert" />
       </label>
       <label class="row">シード
         <input type="number" id="p-seed" value="42" min="0" step="1" />

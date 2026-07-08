@@ -37,6 +37,8 @@ struct ParamsDto {
     saturation: f32,
     out_long: u32,
     seed: u64,
+    depth_detail: f32,
+    depth_invert: bool,
 }
 
 impl Default for ParamsDto {
@@ -58,6 +60,8 @@ impl Default for ParamsDto {
             saturation: p.saturation,
             out_long: p.out_long,
             seed: p.seed,
+            depth_detail: p.depth_detail,
+            depth_invert: p.depth_invert,
         }
     }
 }
@@ -80,6 +84,8 @@ impl From<ParamsDto> for Params {
             saturation: d.saturation,
             out_long: d.out_long,
             seed: d.seed,
+            depth_detail: d.depth_detail,
+            depth_invert: d.depth_invert,
             ..Params::default()
         }
     }

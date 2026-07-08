@@ -30,6 +30,10 @@ struct ParamsSheet: View {
                     floatSlider("ウェット混色", value: $params.wet, range: 0...0.5, step: 0.02)
                     floatSlider("勾配ぼかし σ", value: $params.normalBlur, range: 1...20, step: 0.5)
                 }
+                Section("奥行き") {
+                    floatSlider("奥行きディテール", value: $params.depthDetail, range: 0...1, step: 0.05)
+                    Toggle("手前/奥を反転", isOn: $params.depthInvert)
+                }
                 Section("ブラシ") {
                     brushPicker("ハード", selection: $params.hardBrush)
                     brushPicker("スタンダード", selection: $params.standardBrush)

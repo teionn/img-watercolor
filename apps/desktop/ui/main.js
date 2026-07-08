@@ -20,6 +20,7 @@ const STAGE_LABELS = {
   "4_gray_blur": "グレー",
   "5_normal_map": "法線",
   "6_flow_map": "フロー",
+  depth_map: "深度",
   density: "密度",
   palette_swatch: "パレット",
   color_wheel: "色環",
@@ -35,7 +36,7 @@ let finalDataUrl = null;
 
 const SLIDERS = [
   "pixels", "resolution", "palette", "posterize_blur", "normal_blur",
-  "brush_size", "strokes_scale", "wet", "saturation", "out_long",
+  "brush_size", "strokes_scale", "wet", "saturation", "depth_detail", "out_long",
 ];
 
 for (const name of SLIDERS) {
@@ -67,6 +68,8 @@ function collectParams() {
     saturation: num("saturation"),
     out_long: num("out_long") | 0,
     seed: parseInt($("p-seed").value, 10) || 0,
+    depth_detail: num("depth_detail"),
+    depth_invert: $("p-depth_invert").checked,
   };
 }
 

@@ -61,6 +61,15 @@ struct Args {
     /// 一筆ごとの描画過程 GIF を出力
     #[arg(long, default_value_t = false)]
     process_gif: bool,
+    /// デプスによるタッチ粗密の強さ 0..1（手前=細かく、奥=粗く。0 で無効）
+    #[arg(long, default_value_t = 0.5)]
+    depth_detail: f32,
+    /// 外部デプスマップ PNG（白 = 手前）。省略時は組み込み推定
+    #[arg(long)]
+    depth: Option<PathBuf>,
+    /// 深度の手前/奥を反転
+    #[arg(long, default_value_t = false)]
+    depth_invert: bool,
     /// 出力先ディレクトリ（既定: output/<画像名>/）
     #[arg(long)]
     out: Option<PathBuf>,
@@ -86,6 +95,18 @@ fn main() {
         out_long: args.out_long,
         seed: args.seed,
         process_gif: args.process_gif,
+        depth_detail: args.depth_detail,
+        depth_invert: args.depth_invert,
+        external_depth: match &args.depth {
+            Some(path) => match image::open(path) {
+                Ok(img) => Some(img.to_luma8()),
+                Err(e) => {
+                    eprintln!("[error] デプスマップを読み込めません: {}: {e}", path.display());
+                    std::process::exit(1);
+                }
+            },
+            None => None,
+        },
         ..Params::default()
     };
 

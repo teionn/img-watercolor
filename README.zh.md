@@ -80,6 +80,11 @@ cargo run --release -p painterly-cli -- input/cat.png   # CLI（与 run.py 同�
 cd apps/desktop/src-tauri && cargo tauri dev            # 桌面应用（Tauri 2）
 ```
 
+Rust 版新增 — **深度图控制笔触粗细**：估计画面深度（对焦度 + 大气透视 +
+上下先验），近处笔触细、远处笔触大而松。`--depth-detail 0..1` 调节强度（0 关闭）、
+`--depth my_depth.png` 使用外部深度图（白 = 近，如 MiDaS 输出）、
+`--depth-invert` 反转远近。中间图 `depth_map.png` 可查看估计结果。
+
 ## 代码结构
 
 ```

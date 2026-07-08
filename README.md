@@ -87,6 +87,12 @@ cargo run --release -p painterly-cli -- input/cat.png   # CLI（run.py と同じ
 cd apps/desktop/src-tauri && cargo tauri dev            # デスクトップアプリ（Tauri 2）
 ```
 
+Rust 版の追加機能 — **デプスマップによるタッチの粗密制御**：
+奥行きを推定（合焦度 + 大気遠近 + 上下事前分布）し、手前ほど細かいタッチ、
+奥ほど大きく粗いタッチで描く。`--depth-detail 0..1` で強さを調整（0 で無効）、
+`--depth my_depth.png` で外部デプス（白 = 手前、MiDaS 等の出力）を指定、
+`--depth-invert` で手前/奥を反転。中間画像 `depth_map.png` で推定結果を確認できる。
+
 ## コード構成
 
 ```

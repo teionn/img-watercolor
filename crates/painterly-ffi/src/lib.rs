@@ -66,6 +66,15 @@ pub struct RenderParams {
     pub out_long: u32,
     #[uniffi(default = 42)]
     pub seed: u64,
+    /// デプスによるタッチ粗密の強さ 0..1（手前=細かく、奥=粗く。0 で無効）
+    #[uniffi(default = 0.5)]
+    pub depth_detail: f32,
+    /// 深度の手前/奥を反転
+    #[uniffi(default = false)]
+    pub depth_invert: bool,
+    /// 外部デプスマップ（PNG/JPEG バイト列、白=手前）。None なら組み込み推定
+    #[uniffi(default = None)]
+    pub depth_image: Option<Vec<u8>>,
 }
 
 impl Default for RenderParams {
@@ -87,6 +96,9 @@ impl Default for RenderParams {
             saturation: p.saturation,
             out_long: p.out_long,
             seed: p.seed,
+            depth_detail: p.depth_detail,
+            depth_invert: p.depth_invert,
+            depth_image: None,
         }
     }
 }
@@ -109,6 +121,12 @@ impl From<RenderParams> for Params {
             saturation: d.saturation,
             out_long: d.out_long,
             seed: d.seed,
+            depth_detail: d.depth_detail,
+            depth_invert: d.depth_invert,
+            external_depth: d
+                .depth_image
+                .and_then(|bytes| image::load_from_memory(&bytes).ok())
+                .map(|img| img.to_luma8()),
             ..Params::default()
         }
     }

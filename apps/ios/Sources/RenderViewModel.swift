@@ -16,6 +16,7 @@ let stageLabels: [String: String] = [
     "4_gray_blur": "グレー",
     "5_normal_map": "法線",
     "6_flow_map": "フロー",
+    "depth_map": "深度",
     "density": "密度",
     "palette_swatch": "パレット",
     "color_wheel": "色環",
@@ -24,7 +25,7 @@ let stageLabels: [String: String] = [
 ]
 let stageOrder: [String] = [
     "1_original", "2_quantized", "3_posterize_edges", "4_gray_blur",
-    "5_normal_map", "6_flow_map", "density", "palette_swatch",
+    "5_normal_map", "6_flow_map", "depth_map", "density", "palette_swatch",
     "color_wheel", "7_strokes_debug", "8_painting",
 ]
 

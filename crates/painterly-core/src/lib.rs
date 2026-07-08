@@ -16,6 +16,7 @@ pub mod brushes;
 pub mod buf;
 pub mod color;
 pub mod density;
+pub mod depth;
 pub mod flowmap;
 pub mod palette;
 pub mod pipeline;

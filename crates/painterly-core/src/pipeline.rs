@@ -20,6 +20,7 @@ use crate::buf::{
 };
 use crate::color;
 use crate::density;
+use crate::depth;
 use crate::flowmap;
 use crate::palette;
 use crate::rng::Rng64;
@@ -61,6 +62,13 @@ pub struct Params {
     pub out_long: u32,
     pub seed: u64,
     pub process_gif: bool,
+    /// デプスによるタッチ粗密の強さ 0..1（0 = 無効）。
+    /// 手前ほど細かいタッチ、奥ほど大きく粗いタッチになる
+    pub depth_detail: f32,
+    /// 深度の手前/奥を反転する（推定が逆転する画像への補正用）
+    pub depth_invert: bool,
+    /// 外部デプスマップ（白 = 手前）。None なら組み込みのヒューリスティック推定
+    pub external_depth: Option<image::GrayImage>,
 }
 
 impl Default for Params {
@@ -85,6 +93,9 @@ impl Default for Params {
             out_long: 1080,
             seed: 42,
             process_gif: false,
+            depth_detail: 0.5,
+            depth_invert: false,
+            external_depth: None,
         }
     }
 }
@@ -181,7 +192,26 @@ pub fn run_pipeline(
     let fmap = flowmap::flow_map_vis(&theta, &coh);
 
     let pe_ana = resize_gray_bilinear(&pedge, cw, ch);
-    let dens = density::density_map(&gx, &gy, &pe_ana, (p.resolution as f32 * 0.03).max(2.0), 1.0);
+    let mut dens =
+        density::density_map(&gx, &gy, &pe_ana, (p.resolution as f32 * 0.03).max(2.0), 1.0);
+
+    // --- デプス（タッチの粗密制御） ---
+    // 手前ほど密度を保つ = 小さいハードブラシと細部レイヤーが残り、
+    // 奥ほど密度を落とす = 大きいソフトブラシに寄る
+    let mut depth_g = match &p.external_depth {
+        Some(dm) => depth::from_external(dm, cw, ch),
+        None => depth::estimate_depth(&ana, (p.resolution as f32 * 0.04).max(3.0)),
+    };
+    if p.depth_invert {
+        for v in &mut depth_g.data {
+            *v = 1.0 - *v;
+        }
+    }
+    if p.depth_detail > 0.0 {
+        for i in 0..cw * ch {
+            dens.data[i] *= 1.0 - p.depth_detail * depth_g.data[i];
+        }
+    }
 
     stage!("1_original", img_rgb.clone());
     stage!("2_quantized", q.quantized.clone());
@@ -196,6 +226,7 @@ pub fn run_pipeline(
     });
     stage!("5_normal_map", nmap);
     stage!("6_flow_map", fmap);
+    stage!("depth_map", depth::depth_vis(&depth_g));
     let hard_t = quantile(&dens.data, p.hard_quantile);
     let std_t = quantile(&dens.data, p.standard_quantile);
     stage!("density", density::density_vis(&dens, hard_t));
