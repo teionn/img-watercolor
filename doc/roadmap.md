@@ -28,6 +28,8 @@ painterly-core (pure Rust / 依存は image・rand のみ)
   リアルタイム描画プレビュー、過程リプレイ、保存）。
 - 残タスク:
   - [ ] Windows 実機での `cargo tauri build`（NSIS/MSI）と動作確認
+  - [ ] ニューラル深度（painterly-depth）のデスクトップ組み込み
+        （モデルパス設定 UI + 同梱するかダウンロードさせるかの判断）
   - [ ] カスタムブラシ PNG の読み込み UI
   - [ ] process.gif 書き出しの UI 露出
   - [ ] レンダリングのキャンセル操作（コアにキャンセルフラグを追加）

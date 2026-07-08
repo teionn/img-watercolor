@@ -88,10 +88,19 @@ cd apps/desktop/src-tauri && cargo tauri dev            # デスクトップア�
 ```
 
 Rust 版の追加機能 — **デプスマップによるタッチの粗密制御**：
-奥行きを推定（合焦度 + 大気遠近 + 上下事前分布）し、手前ほど細かいタッチ、
-奥ほど大きく粗いタッチで描く。`--depth-detail 0..1` で強さを調整（0 で無効）、
-`--depth my_depth.png` で外部デプス（白 = 手前、MiDaS 等の出力）を指定、
-`--depth-invert` で手前/奥を反転。中間画像 `depth_map.png` で推定結果を確認できる。
+奥行きに応じて手前ほど細かいタッチ、奥ほど大きく粗いタッチで描く
+（詳細は [doc/depth.md](doc/depth.md)）。
+
+```bash
+scripts/fetch_models.sh        # Depth Anything V2 small (ONNX, ~99MB) を取得
+cargo run --release -p painterly-cli -- input/cat.png --depth-detail 0.7
+```
+
+- `--depth-detail 0..1` — 強さ（0 で無効、既定 0.5）
+- モデルがあれば **Depth Anything V2**（NeurIPS 2024）で深度推定、
+  無ければ組み込みのヒューリスティック（合焦度 + 大気遠近 + 上下事前分布）
+- `--depth my_depth.png` — 外部デプス（白 = 手前）を直接指定
+- `--depth-invert` — 手前/奥の反転。中間画像 `depth_map.png` で推定結果を確認できる
 
 ## コード構成
 

@@ -1,0 +1,10 @@
+[package]
+name = "painterly-depth"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "ニューラル単眼深度推定（MiDaS ONNX を tract で実行、pure Rust）"
+
+[dependencies]
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+tract-onnx = "0.21"

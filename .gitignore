@@ -14,6 +14,9 @@ output/
 # 打包产物
 *.zip
 
+# 深度推定モデル（scripts/fetch_models.sh で取得）
+models/
+
 # Rust / Tauri
 target/
 apps/desktop/src-tauri/gen/schemas/

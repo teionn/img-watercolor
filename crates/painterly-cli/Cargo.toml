@@ -11,5 +11,6 @@ path = "src/main.rs"
 
 [dependencies]
 painterly-core = { path = "../painterly-core" }
+painterly-depth = { path = "../painterly-depth" }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif"] }
 clap = { version = "4", features = ["derive"] }

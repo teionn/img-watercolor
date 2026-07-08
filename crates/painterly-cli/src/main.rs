@@ -64,12 +64,17 @@ struct Args {
     /// デプスによるタッチ粗密の強さ 0..1（手前=細かく、奥=粗く。0 で無効）
     #[arg(long, default_value_t = 0.5)]
     depth_detail: f32,
-    /// 外部デプスマップ PNG（白 = 手前）。省略時は組み込み推定
+    /// 外部デプスマップ PNG（白 = 手前）。省略時はモデル推定 or 組み込み推定
     #[arg(long)]
     depth: Option<PathBuf>,
     /// 深度の手前/奥を反転
     #[arg(long, default_value_t = false)]
     depth_invert: bool,
+    /// 深度推定の ONNX モデル（Depth Anything V2 small 等）。
+    /// 省略時は models/depth_anything_v2_small.onnx を自動検出、
+    /// それも無ければ組み込みのヒューリスティック推定
+    #[arg(long)]
+    depth_model: Option<PathBuf>,
     /// 出力先ディレクトリ（既定: output/<画像名>/）
     #[arg(long)]
     out: Option<PathBuf>,
@@ -110,6 +115,29 @@ fn main() {
         ..Params::default()
     };
 
+    // 深度推定モデル: --depth 指定時は不要。--depth-model か models/ の既定パスを使う
+    let depth_model = if args.depth.is_some() {
+        None
+    } else {
+        let model_path = args.depth_model.clone().or_else(|| {
+            let default = PathBuf::from("models/depth_anything_v2_small.onnx");
+            default.exists().then_some(default)
+        });
+        match model_path {
+            Some(path) => match painterly_depth::DepthModel::load(&path, None) {
+                Ok(m) => {
+                    eprintln!("[info] 深度モデル: {}", path.display());
+                    Some(m)
+                }
+                Err(e) => {
+                    eprintln!("[error] 深度モデルを読み込めません: {e}");
+                    std::process::exit(1);
+                }
+            },
+            None => None,
+        }
+    };
+
     // ビルトイン名でなければカスタムブラシ PNG として登録
     for (name, field) in [
         ("custom_hard", &mut params.hard_brush),
@@ -139,10 +167,20 @@ fn main() {
             .clone()
             .unwrap_or_else(|| Path::new("output").join(&stem));
         let t0 = Instant::now();
+        // モデル推定は画像ごとに行う
+        let mut params_img = params.clone();
+        if let Some(model) = &depth_model {
+            match model.estimate(&img) {
+                Ok(d) => params_img.external_depth = Some(d),
+                Err(e) => {
+                    eprintln!("[warn] 深度推定に失敗、組み込み推定を使用: {e}");
+                }
+            }
+        }
         match painterly_core::run_pipeline(
             &img,
             Some(&out_dir),
-            &params,
+            &params_img,
             &mut brushes,
             Callbacks::default(),
             false,

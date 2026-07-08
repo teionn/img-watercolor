@@ -5,6 +5,7 @@ resolver = "2"
 members = [
     "crates/painterly-core",
     "crates/painterly-cli",
+    "crates/painterly-depth",
     "crates/painterly-ffi",
 ]
 
