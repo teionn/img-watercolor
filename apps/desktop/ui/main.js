@@ -22,6 +22,7 @@ const STAGE_LABELS = {
   "6_flow_map": "フロー",
   depth_map: "深度",
   density: "密度",
+  line_art: "輪郭線",
   palette_swatch: "パレット",
   color_wheel: "色環",
   "7_strokes_debug": "ストローク",
@@ -37,7 +38,11 @@ let finalDataUrl = null;
 const SLIDERS = [
   "pixels", "resolution", "palette", "posterize_blur", "normal_blur",
   "brush_size", "strokes_scale", "wet", "saturation", "depth_detail", "out_long",
+  "focus_range", "detail_min", "detail_max", "line_strength", "line_width",
 ];
+
+// フォーカス位置（プレビュー上の正規化座標）。クリックで設定、ダブルクリックで解除
+let focusPoint = null;
 
 for (const name of SLIDERS) {
   const input = $(`p-${name}`);
@@ -70,6 +75,13 @@ function collectParams() {
     seed: parseInt($("p-seed").value, 10) || 0,
     depth_detail: num("depth_detail"),
     depth_invert: $("p-depth_invert").checked,
+    focus_x: focusPoint ? focusPoint.x : null,
+    focus_y: focusPoint ? focusPoint.y : null,
+    focus_range: num("focus_range"),
+    detail_min: num("detail_min"),
+    detail_max: num("detail_max"),
+    line_strength: num("line_strength"),
+    line_width: num("line_width"),
   };
 }
 
@@ -116,6 +128,7 @@ async function openImage(path) {
     const info = await invoke("load_image", { path });
     imagePath = path;
     stopReplay();
+    clearFocus();
     stagesEl.innerHTML = "";
     processFrames = [];
     finalDataUrl = null;
@@ -215,3 +228,29 @@ listen("tauri://drag-drop", ({ payload }) => {
   const paths = payload?.paths ?? [];
   if (paths.length && !rendering) openImage(paths[0]);
 });
+
+// --- フォーカス位置の指定（クリックで設定、ダブルクリックで解除） ---
+const focusMarker = $("focus-marker");
+const focusState = $("focus-state");
+const wrap = $("preview-wrap");
+
+function clearFocus() {
+  focusPoint = null;
+  focusMarker.style.display = "none";
+  focusState.textContent = "（プレビューをクリックで焦点指定）";
+}
+
+preview.addEventListener("click", (e) => {
+  const r = preview.getBoundingClientRect();
+  focusPoint = {
+    x: (e.clientX - r.left) / r.width,
+    y: (e.clientY - r.top) / r.height,
+  };
+  const wr = wrap.getBoundingClientRect();
+  focusMarker.style.left = `${e.clientX - wr.left}px`;
+  focusMarker.style.top = `${e.clientY - wr.top}px`;
+  focusMarker.style.display = "block";
+  focusState.textContent = `（焦点: ${focusPoint.x.toFixed(2)}, ${focusPoint.y.toFixed(2)} — ダブルクリックで解除）`;
+});
+
+preview.addEventListener("dblclick", clearFocus);

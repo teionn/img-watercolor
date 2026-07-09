@@ -62,13 +62,26 @@ pub struct Params {
     pub out_long: u32,
     pub seed: u64,
     pub process_gif: bool,
-    /// デプスによるタッチ粗密の強さ 0..1（0 = 無効）。
-    /// 手前ほど細かいタッチ、奥ほど大きく粗いタッチになる
+    /// デプスによるタッチ粗密の強さ 0..1（0 = 無効）
     pub depth_detail: f32,
     /// 深度の手前/奥を反転する（推定が逆転する画像への補正用）
     pub depth_invert: bool,
     /// 外部デプスマップ（白 = 手前）。None なら組み込みのヒューリスティック推定
     pub external_depth: Option<image::GrayImage>,
+    /// フォーカス位置（画像上の正規化座標 0..1）。指定するとその点の深度が焦点になる
+    pub focus_point: Option<(f32, f32)>,
+    /// focus_point 未指定時の焦点深度 0(手前)..1(奥)
+    pub focus_depth: f32,
+    /// 焦点から細かさが保たれる深度範囲。小さいほど「被写界深度が浅い」
+    pub focus_range: f32,
+    /// 範囲外（ボケ領域）の粗さ下限。密度に掛かる倍率（小さいほど粗い）
+    pub detail_min: f32,
+    /// 焦点近傍の細かさ上限。1 より大きいと焦点付近をさらに細かく
+    pub detail_max: f32,
+    /// 輪郭線の強さ 0..1（0 = 無効）。ボケ領域では自動的に薄くなる
+    pub line_strength: f32,
+    /// 輪郭線の太さ（キャンバス px、半径）
+    pub line_width: f32,
 }
 
 impl Default for Params {
@@ -96,6 +109,13 @@ impl Default for Params {
             depth_detail: 0.5,
             depth_invert: false,
             external_depth: None,
+            focus_point: None,
+            focus_depth: 0.0,
+            focus_range: 0.6,
+            detail_min: 0.35,
+            detail_max: 1.15,
+            line_strength: 0.4,
+            line_width: 1.0,
         }
     }
 }
@@ -207,9 +227,30 @@ pub fn run_pipeline(
             *v = 1.0 - *v;
         }
     }
+
+    // フォーカス重み: 1 = 焦点近傍（細かい）、0 = 深度範囲外（粗い）。
+    // 焦点はクリック位置の深度（focus_point）か focus_depth の値
+    let focus_depth = match p.focus_point {
+        Some((fx, fy)) => {
+            let xi = (fx.clamp(0.0, 1.0) * (cw - 1) as f32) as usize;
+            let yi = (fy.clamp(0.0, 1.0) * (ch - 1) as f32) as usize;
+            depth_g.at(xi, yi)
+        }
+        None => p.focus_depth.clamp(0.0, 1.0),
+    };
+    let range = p.focus_range.max(0.05);
+    let mut focus_w = Gray::new(cw, ch);
+    for i in 0..cw * ch {
+        let t = ((depth_g.data[i] - focus_depth).abs() / range).clamp(0.0, 1.0);
+        focus_w.data[i] = 1.0 - t * t * (3.0 - 2.0 * t); // smoothstep 減衰
+    }
     if p.depth_detail > 0.0 {
+        // 密度をフォーカス重みで変調: detail_min（ボケ側の粗さ下限）〜
+        // detail_max（焦点側の細かさ上限）を depth_detail の強さでブレンド
         for i in 0..cw * ch {
-            dens.data[i] *= 1.0 - p.depth_detail * depth_g.data[i];
+            let scale = p.detail_min + (p.detail_max - p.detail_min) * focus_w.data[i];
+            let eff = 1.0 + (scale - 1.0) * p.depth_detail;
+            dens.data[i] = (dens.data[i] * eff).clamp(0.0, 1.2);
         }
     }
 
@@ -251,6 +292,56 @@ pub fn run_pipeline(
             px.0[2] as f32 / 255.0,
         ];
     }
+
+    // 輪郭線マスク: パレット吸着済みターゲットの色替わり箇所（描画後に重ねる）。
+    // 境界を跨ぐ色距離で重み付けする——滑らかなグラデーションの減色バンディング
+    // （床や壁の等高線状ノイズ）は隣接色が近いので消え、
+    // 被写体の輪郭のような色差の大きい境界だけが残る
+    let line_mask = if p.line_strength > 0.0 {
+        let color_dist = |a: &image::Rgb<u8>, b: &image::Rgb<u8>| -> f32 {
+            let dr = a.0[0] as f32 - b.0[0] as f32;
+            let dg = a.0[1] as f32 - b.0[1] as f32;
+            let db = a.0[2] as f32 - b.0[2] as f32;
+            (dr * dr + dg * dg + db * db).sqrt() / 441.7 // 最大距離で正規化
+        };
+        let smoothstep = |e0: f32, e1: f32, x: f32| -> f32 {
+            let t = ((x - e0) / (e1 - e0)).clamp(0.0, 1.0);
+            t * t * (3.0 - 2.0 * t)
+        };
+        // 輪郭は 2〜3px の中間色バンドを経て遷移するため、隣接比較では
+        // 色差が拾えない。±2px スパンの対称比較で境界全体のコントラストを見る
+        let mut m = Gray::new(cw, ch);
+        const SPAN: usize = 2;
+        for y in 0..ch {
+            for x in 0..cw {
+                let xl = x.saturating_sub(SPAN) as u32;
+                let xr = (x + SPAN).min(cw - 1) as u32;
+                let yt = y.saturating_sub(SPAN) as u32;
+                let yb = (y + SPAN).min(ch - 1) as u32;
+                let dh = color_dist(
+                    target_u8.get_pixel(xl, y as u32),
+                    target_u8.get_pixel(xr, y as u32),
+                );
+                let dv = color_dist(
+                    target_u8.get_pixel(x as u32, yt),
+                    target_u8.get_pixel(x as u32, yb),
+                );
+                // 色差 10% 以下は無視、28% 以上でフル強度
+                m.set(x, y, smoothstep(0.10, 0.28, dh.max(dv)));
+            }
+        }
+        let m = dilate(&m, p.line_width);
+        let m = gaussian_blur(&m, 0.6);
+        let mut vis = RgbImage::new(cw as u32, ch as u32);
+        for (i, px) in vis.pixels_mut().enumerate() {
+            let v = ((1.0 - m.data[i].clamp(0.0, 1.0)) * 255.0) as u8;
+            px.0 = [v, v, v];
+        }
+        stage!("line_art", vis);
+        Some(m)
+    } else {
+        None
+    };
 
     let bs = p.brush_size;
     let engine = PaintEngine::new(&target, &theta, &coh, &dens);
@@ -364,6 +455,29 @@ pub fn run_pipeline(
         }
     }
 
+    // 輪郭線を重ねる。インクは局所色を落としたもの（真っ黒より絵に馴染む）。
+    // ボケ領域（フォーカス重みが低い）では線も薄くして被写界深度と整合させる
+    if let Some(mask) = &line_mask {
+        for i in 0..cw * ch {
+            let mut a = mask.data[i].clamp(0.0, 1.0) * p.line_strength;
+            if p.depth_detail > 0.0 {
+                a *= 1.0 - (1.0 - focus_w.data[i]) * p.depth_detail;
+            }
+            if a <= 0.0 {
+                continue;
+            }
+            let ink = [
+                target.data[i][0] * 0.25,
+                target.data[i][1] * 0.25,
+                target.data[i][2] * 0.25,
+            ];
+            let px = &mut canvas.data[i];
+            for c in 0..3 {
+                px[c] = px[c] * (1.0 - a) + ink[c] * a;
+            }
+        }
+    }
+
     let low = canvas.to_u8_01();
     let final_img = if p.out_long as usize > cw.max(ch) {
         let s = p.out_long as f32 / cw.max(ch) as f32;
@@ -414,6 +528,39 @@ fn write_process_gif(path: &Path, frames: &[RgbImage], cw: u32, ch: u32) -> Resu
         enc.encode_frame(frame).map_err(|e| e.to_string())?;
     }
     Ok(())
+}
+
+/// 円形カーネルでの膨張（輪郭線の太らせ用）
+fn dilate(src: &Gray, radius: f32) -> Gray {
+    let r = radius.ceil().max(0.0) as isize;
+    if r == 0 {
+        return src.clone();
+    }
+    let (w, h) = (src.w as isize, src.h as isize);
+    let r2 = radius * radius;
+    let mut out = Gray::new(src.w, src.h);
+    for y in 0..h {
+        for x in 0..w {
+            let mut mx = 0.0f32;
+            for dy in -r..=r {
+                let yy = y + dy;
+                if yy < 0 || yy >= h {
+                    continue;
+                }
+                for dx in -r..=r {
+                    let xx = x + dx;
+                    if xx < 0 || xx >= w {
+                        continue;
+                    }
+                    if (dx * dx + dy * dy) as f32 <= r2 {
+                        mx = mx.max(src.data[(yy * w + xx) as usize]);
+                    }
+                }
+            }
+            out.data[(y * w + x) as usize] = mx;
+        }
+    }
+    out
 }
 
 /// 全ステージを 1 枚のグリッドにまとめた一覧画像（濃いグレー地）

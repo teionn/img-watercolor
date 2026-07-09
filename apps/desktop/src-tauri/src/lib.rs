@@ -39,6 +39,13 @@ struct ParamsDto {
     seed: u64,
     depth_detail: f32,
     depth_invert: bool,
+    focus_x: Option<f32>,
+    focus_y: Option<f32>,
+    focus_range: f32,
+    detail_min: f32,
+    detail_max: f32,
+    line_strength: f32,
+    line_width: f32,
 }
 
 impl Default for ParamsDto {
@@ -62,6 +69,13 @@ impl Default for ParamsDto {
             seed: p.seed,
             depth_detail: p.depth_detail,
             depth_invert: p.depth_invert,
+            focus_x: None,
+            focus_y: None,
+            focus_range: p.focus_range,
+            detail_min: p.detail_min,
+            detail_max: p.detail_max,
+            line_strength: p.line_strength,
+            line_width: p.line_width,
         }
     }
 }
@@ -86,6 +100,12 @@ impl From<ParamsDto> for Params {
             seed: d.seed,
             depth_detail: d.depth_detail,
             depth_invert: d.depth_invert,
+            focus_point: d.focus_x.zip(d.focus_y),
+            focus_range: d.focus_range,
+            detail_min: d.detail_min,
+            detail_max: d.detail_max,
+            line_strength: d.line_strength,
+            line_width: d.line_width,
             ..Params::default()
         }
     }

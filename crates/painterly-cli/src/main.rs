@@ -75,6 +75,30 @@ struct Args {
     /// それも無ければ組み込みのヒューリスティック推定
     #[arg(long)]
     depth_model: Option<PathBuf>,
+    /// フォーカス位置 X（画像上の正規化座標 0..1）。Y とセットで指定
+    #[arg(long)]
+    focus_x: Option<f32>,
+    /// フォーカス位置 Y（画像上の正規化座標 0..1）
+    #[arg(long)]
+    focus_y: Option<f32>,
+    /// フォーカス位置未指定時の焦点深度 0(手前)..1(奥)
+    #[arg(long, default_value_t = 0.0)]
+    focus_depth: f32,
+    /// 焦点から細かさが保たれる深度範囲（小さいほど被写界深度が浅い）
+    #[arg(long, default_value_t = 0.6)]
+    focus_range: f32,
+    /// ボケ領域の粗さ下限（密度倍率、小さいほど粗い）
+    #[arg(long, default_value_t = 0.35)]
+    detail_min: f32,
+    /// 焦点近傍の細かさ上限（1 超で焦点付近をさらに細かく）
+    #[arg(long, default_value_t = 1.15)]
+    detail_max: f32,
+    /// 輪郭線の強さ 0..1（0 で無効）
+    #[arg(long, default_value_t = 0.4)]
+    line_strength: f32,
+    /// 輪郭線の太さ（キャンバス px）
+    #[arg(long, default_value_t = 1.0)]
+    line_width: f32,
     /// 出力先ディレクトリ（既定: output/<画像名>/）
     #[arg(long)]
     out: Option<PathBuf>,
@@ -102,6 +126,13 @@ fn main() {
         process_gif: args.process_gif,
         depth_detail: args.depth_detail,
         depth_invert: args.depth_invert,
+        focus_point: args.focus_x.zip(args.focus_y),
+        focus_depth: args.focus_depth,
+        focus_range: args.focus_range,
+        detail_min: args.detail_min,
+        detail_max: args.detail_max,
+        line_strength: args.line_strength,
+        line_width: args.line_width,
         external_depth: match &args.depth {
             Some(path) => match image::open(path) {
                 Ok(img) => Some(img.to_luma8()),

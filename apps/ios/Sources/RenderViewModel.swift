@@ -18,6 +18,7 @@ let stageLabels: [String: String] = [
     "6_flow_map": "フロー",
     "depth_map": "深度",
     "density": "密度",
+    "line_art": "輪郭線",
     "palette_swatch": "パレット",
     "color_wheel": "色環",
     "7_strokes_debug": "ストローク",
@@ -26,7 +27,7 @@ let stageLabels: [String: String] = [
 let stageOrder: [String] = [
     "1_original", "2_quantized", "3_posterize_edges", "4_gray_blur",
     "5_normal_map", "6_flow_map", "depth_map", "density", "palette_swatch",
-    "color_wheel", "7_strokes_debug", "8_painting",
+    "color_wheel", "line_art", "7_strokes_debug", "8_painting",
 ]
 
 @MainActor
@@ -54,6 +55,8 @@ final class RenderViewModel: ObservableObject {
         frames = []
         finalImage = nil
         progress = 0
+        params.focusX = nil
+        params.focusY = nil
         if let img = UIImage(data: data) {
             preview = img
             statusText = "\(Int(img.size.width))×\(Int(img.size.height))"

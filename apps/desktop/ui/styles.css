@@ -44,6 +44,20 @@ button:disabled { opacity: 0.45; cursor: default; }
   background: #2b2d31;
   border-radius: 8px;
 }
+.group-title { color: #eceef2; font-size: 12px; }
+.group-title span { color: #6b6f78; font-size: 11px; }
+
+#focus-marker {
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  margin: -9px 0 0 -9px;
+  border: 2px solid #ffd45e;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6);
+  pointer-events: none;
+  display: none;
+}
 label { display: flex; flex-direction: column; gap: 2px; color: #b9bcc4; }
 label span { color: #7fb2e8; }
 label.row { flex-direction: row; justify-content: space-between; align-items: center; }

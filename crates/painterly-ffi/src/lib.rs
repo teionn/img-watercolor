@@ -75,6 +75,27 @@ pub struct RenderParams {
     /// 外部デプスマップ（PNG/JPEG バイト列、白=手前）。None なら組み込み推定
     #[uniffi(default = None)]
     pub depth_image: Option<Vec<u8>>,
+    /// フォーカス位置 X（画像上の正規化座標 0..1）。Y とセットで指定
+    #[uniffi(default = None)]
+    pub focus_x: Option<f32>,
+    /// フォーカス位置 Y（画像上の正規化座標 0..1）
+    #[uniffi(default = None)]
+    pub focus_y: Option<f32>,
+    /// 焦点から細かさが保たれる深度範囲（小さいほど被写界深度が浅い）
+    #[uniffi(default = 0.6)]
+    pub focus_range: f32,
+    /// ボケ領域の粗さ下限（密度倍率、小さいほど粗い）
+    #[uniffi(default = 0.35)]
+    pub detail_min: f32,
+    /// 焦点近傍の細かさ上限（1 超で焦点付近をさらに細かく）
+    #[uniffi(default = 1.15)]
+    pub detail_max: f32,
+    /// 輪郭線の強さ 0..1（0 で無効）
+    #[uniffi(default = 0.4)]
+    pub line_strength: f32,
+    /// 輪郭線の太さ（キャンバス px）
+    #[uniffi(default = 1.0)]
+    pub line_width: f32,
 }
 
 impl Default for RenderParams {
@@ -99,6 +120,13 @@ impl Default for RenderParams {
             depth_detail: p.depth_detail,
             depth_invert: p.depth_invert,
             depth_image: None,
+            focus_x: None,
+            focus_y: None,
+            focus_range: p.focus_range,
+            detail_min: p.detail_min,
+            detail_max: p.detail_max,
+            line_strength: p.line_strength,
+            line_width: p.line_width,
         }
     }
 }
@@ -123,6 +151,12 @@ impl From<RenderParams> for Params {
             seed: d.seed,
             depth_detail: d.depth_detail,
             depth_invert: d.depth_invert,
+            focus_point: d.focus_x.zip(d.focus_y),
+            focus_range: d.focus_range,
+            detail_min: d.detail_min,
+            detail_max: d.detail_max,
+            line_strength: d.line_strength,
+            line_width: d.line_width,
             external_depth: d
                 .depth_image
                 .and_then(|bytes| image::load_from_memory(&bytes).ok())

@@ -30,9 +30,26 @@ struct ParamsSheet: View {
                     floatSlider("ウェット混色", value: $params.wet, range: 0...0.5, step: 0.02)
                     floatSlider("勾配ぼかし σ", value: $params.normalBlur, range: 1...20, step: 0.5)
                 }
-                Section("奥行き") {
+                Section("奥行き / フォーカス") {
                     floatSlider("奥行きディテール", value: $params.depthDetail, range: 0...1, step: 0.05)
+                    floatSlider("フォーカス範囲", value: $params.focusRange, range: 0.05...1, step: 0.05)
+                    floatSlider("粗さ下限（ボケ側）", value: $params.detailMin, range: 0.1...1, step: 0.05)
+                    floatSlider("細かさ上限（焦点側）", value: $params.detailMax, range: 1...1.6, step: 0.05)
                     Toggle("手前/奥を反転", isOn: $params.depthInvert)
+                    if params.focusX != nil {
+                        Button("フォーカス位置を解除") {
+                            params.focusX = nil
+                            params.focusY = nil
+                        }
+                    } else {
+                        Text("プレビューをタップすると焦点を指定できます")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                Section("輪郭線") {
+                    floatSlider("強さ", value: $params.lineStrength, range: 0...1, step: 0.05)
+                    floatSlider("太さ", value: $params.lineWidth, range: 0.5...3, step: 0.1)
                 }
                 Section("ブラシ") {
                     brushPicker("ハード", selection: $params.hardBrush)

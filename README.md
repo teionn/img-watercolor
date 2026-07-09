@@ -99,8 +99,11 @@ cargo run --release -p painterly-cli -- input/cat.png --depth-detail 0.7
 - `--depth-detail 0..1` — 強さ（0 で無効、既定 0.5）
 - モデルがあれば **Depth Anything V2**（NeurIPS 2024）で深度推定、
   無ければ組み込みのヒューリスティック（合焦度 + 大気遠近 + 上下事前分布）
+- `--focus-x/--focus-y`（GUI ではクリック / タップ）— フォーカス位置。
+  `--focus-range` で被写界深度、`--detail-min/--detail-max` で粗さ・細かさの範囲
+- `--line-strength` / `--line-width` — 輪郭線（主線）を重ねる。ボケ領域では自動的に薄くなる
 - `--depth my_depth.png` — 外部デプス（白 = 手前）を直接指定
-- `--depth-invert` — 手前/奥の反転。中間画像 `depth_map.png` で推定結果を確認できる
+- `--depth-invert` — 手前/奥の反転。中間画像 `depth_map.png` / `line_art.png` で確認できる
 
 ## コード構成
 
