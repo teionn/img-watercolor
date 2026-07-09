@@ -47,6 +47,75 @@ button:disabled { opacity: 0.45; cursor: default; }
 .group-title { color: #eceef2; font-size: 12px; }
 .group-title span { color: #6b6f78; font-size: 11px; }
 
+/* パラメータ走査（スイープ）ボタンと比較パネル */
+.sweep-btn {
+  flex: 0 0 auto;
+  float: right;
+  padding: 0 6px;
+  margin-left: 6px;
+  font-size: 10px;
+  line-height: 16px;
+  border: 1px solid #3c3e44;
+  border-radius: 4px;
+  background: #33353b;
+  color: #9fb8d4;
+  cursor: pointer;
+}
+.sweep-btn:hover { background: #3d4048; color: #cfe2f5; }
+
+#sweep-panel[hidden] { display: none; }
+#sweep-panel {
+  position: absolute;
+  inset: 12px;
+  background: rgba(24, 25, 28, 0.96);
+  border: 1px solid #3c3e44;
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  padding: 12px;
+  gap: 10px;
+  z-index: 5;
+}
+#sweep-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  color: #eceef2;
+}
+#sweep-header button { flex: 0 0 auto; padding: 4px 12px; }
+#sweep-grid {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  overflow-y: auto;
+  min-height: 0;
+}
+.sweep-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  color: #b9bcc4;
+  font-size: 12px;
+}
+.sweep-cell img {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  object-fit: contain;
+  border-radius: 4px;
+  border: 2px solid transparent;
+}
+.sweep-cell:hover img { border-color: #4a8ccc; }
+.sweep-cell.pending {
+  justify-content: center;
+  border: 1px dashed #3c3e44;
+  border-radius: 4px;
+  cursor: default;
+}
+
 #focus-marker {
   position: absolute;
   width: 18px;
@@ -58,9 +127,10 @@ button:disabled { opacity: 0.45; cursor: default; }
   pointer-events: none;
   display: none;
 }
-label { display: flex; flex-direction: column; gap: 2px; color: #b9bcc4; }
+label { display: block; color: #b9bcc4; }
 label span { color: #7fb2e8; }
-label.row { flex-direction: row; justify-content: space-between; align-items: center; }
+label input[type="range"] { display: block; margin-top: 2px; }
+label.row { display: flex; justify-content: space-between; align-items: center; }
 input[type="range"] { width: 100%; accent-color: #4a8ccc; }
 select, input[type="number"] {
   background: #33353b;

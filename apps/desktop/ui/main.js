@@ -55,6 +55,16 @@ for (const name of SLIDERS) {
   };
   input.addEventListener("input", fmt);
   fmt();
+  // 走査ボタン: このパラメータだけを段階的に変えた比較レンダリング
+  const btn = document.createElement("button");
+  btn.className = "sweep-btn";
+  btn.textContent = "走査";
+  btn.title = "このパラメータを 6 段階に変えて比較";
+  btn.addEventListener("click", (e) => {
+    e.preventDefault();
+    startSweep(name);
+  });
+  label.after(btn);
 }
 
 function collectParams() {
@@ -260,6 +270,95 @@ preview.addEventListener("click", (e) => {
 });
 
 preview.addEventListener("dblclick", clearFocus);
+
+// --- パラメータ走査（スイープ） ---
+const sweepPanel = $("sweep-panel");
+const sweepGrid = $("sweep-grid");
+const sweepTitle = $("sweep-title");
+let sweeping = false;
+let sweepParamName = null;
+
+// スライダー名 → サイドバーの表示名（ボタンの親ラベルから取得）
+function sliderLabelText(name) {
+  const label = $(`p-${name}`).parentElement;
+  return label.childNodes[0].textContent.trim();
+}
+
+async function startSweep(name) {
+  if (!imagePath) {
+    setStatus("先に画像を開いてください");
+    return;
+  }
+  if (rendering || sweeping) return;
+  const input = $(`p-${name}`);
+  const min = parseFloat(input.min);
+  const max = parseFloat(input.max);
+  const step = parseFloat(input.step) || 1;
+  const n = 6;
+  const values = [];
+  for (let i = 0; i < n; i++) {
+    let v = min + ((max - min) * i) / (n - 1);
+    v = Math.round(v / step) * step;
+    v = parseFloat(v.toFixed(4));
+    if (!values.includes(v)) values.push(v);
+  }
+
+  sweeping = true;
+  sweepParamName = name;
+  sweepTitle.textContent = `走査: ${sliderLabelText(name)}（クリックで採用）`;
+  sweepGrid.innerHTML = "";
+  for (const v of values) {
+    const cell = document.createElement("div");
+    cell.className = "sweep-cell pending";
+    cell.textContent = `${v} …`;
+    sweepGrid.appendChild(cell);
+  }
+  sweepPanel.hidden = false;
+  $("btn-render").disabled = true;
+  setStatus(`走査中: ${sliderLabelText(name)}`);
+  try {
+    await invoke("start_sweep", {
+      path: imagePath,
+      params: collectParams(),
+      sweepParam: name,
+      values,
+    });
+  } catch (e) {
+    sweeping = false;
+    sweepPanel.hidden = true;
+    $("btn-render").disabled = false;
+    setStatus(`走査を開始できません: ${e}`);
+  }
+}
+
+listen("sweep_result", ({ payload }) => {
+  const cell = sweepGrid.children[payload.index];
+  if (!cell) return;
+  cell.className = "sweep-cell";
+  cell.innerHTML = "";
+  const img = document.createElement("img");
+  img.src = payload.data_url;
+  const cap = document.createElement("div");
+  cap.textContent = String(payload.value);
+  cell.append(img, cap);
+  cell.addEventListener("click", () => {
+    const input = $(`p-${sweepParamName}`);
+    input.value = payload.value;
+    input.dispatchEvent(new Event("input"));
+    sweepPanel.hidden = true;
+    setStatus(`${sliderLabelText(sweepParamName)} = ${payload.value} を採用（レンダリングで確認）`);
+  });
+});
+
+listen("sweep_done", () => {
+  sweeping = false;
+  $("btn-render").disabled = !imagePath;
+  if (!sweepPanel.hidden) setStatus("走査完了。サムネイルをクリックで値を採用");
+});
+
+$("sweep-close").addEventListener("click", () => {
+  sweepPanel.hidden = true;
+});
 
 // --- プリセット ---
 const presetSelect = $("preset-select");

@@ -301,6 +301,100 @@ fn start_render(
     Ok(())
 }
 
+/// スイープ対象フィールドへ値を設定する（フロントエンドのスライダー名と対応）
+fn apply_sweep_value(p: &mut Params, name: &str, v: f64) -> Result<(), String> {
+    match name {
+        "pixels" => p.pixels = v as u32,
+        "resolution" => p.resolution = v as u32,
+        "palette" => p.palette = v as usize,
+        "posterize_blur" => p.posterize_blur = v as f32,
+        "normal_blur" => p.normal_blur = v as f32,
+        "brush_size" => p.brush_size = v as f32,
+        "strokes_scale" => p.strokes_scale = v as f32,
+        "wet" => p.wet = v as f32,
+        "saturation" => p.saturation = v as f32,
+        "out_long" => p.out_long = v as u32,
+        "depth_detail" => p.depth_detail = v as f32,
+        "focus_range" => p.focus_range = v as f32,
+        "detail_min" => p.detail_min = v as f32,
+        "detail_max" => p.detail_max = v as f32,
+        "line_strength" => p.line_strength = v as f32,
+        "line_width" => p.line_width = v as f32,
+        "paper_texture" => p.paper_texture = v as f32,
+        "paper_border" => p.paper_border = v as f32,
+        "pigment" => p.pigment = v as f32,
+        "edge_darken" => p.edge_darken = v as f32,
+        "seed" => p.seed = v as u64,
+        other => return Err(format!("走査できないパラメータ: {other}")),
+    }
+    Ok(())
+}
+
+#[derive(Serialize, Clone)]
+struct SweepResult {
+    index: usize,
+    value: f64,
+    data_url: String,
+}
+
+/// パラメータスイープ: 1 つのパラメータを values の各値に変えて連続レンダリングし、
+/// 1 枚できるごとに sweep_result イベントで返す。比較を高速にするため拡大は行わない
+#[tauri::command]
+fn start_sweep(
+    app: AppHandle,
+    state: State<'_, RenderState>,
+    path: String,
+    params: ParamsDto,
+    sweep_param: String,
+    values: Vec<f64>,
+) -> Result<(), String> {
+    if state.busy.swap(true, Ordering::SeqCst) {
+        return Err("レンダリング実行中です".into());
+    }
+    let app2 = app.clone();
+    std::thread::spawn(move || {
+        let state = app2.state::<RenderState>();
+        let result = (|| -> Result<(), String> {
+            let img = image::open(&path).map_err(|e| format!("{path}: {e}"))?.to_rgb8();
+            let base: Params = params.into();
+            let mut brushes = Brushes::new();
+            for (index, &value) in values.iter().enumerate() {
+                let mut p = base.clone();
+                apply_sweep_value(&mut p, &sweep_param, value)?;
+                p.out_long = p.resolution; // 拡大なしで高速化（プレビュー用途）
+                let res = painterly_core::run_pipeline(
+                    &img,
+                    None,
+                    &p,
+                    &mut brushes,
+                    Callbacks::default(),
+                    false,
+                )?;
+                let _ = app2.emit(
+                    "sweep_result",
+                    SweepResult {
+                        index,
+                        value,
+                        data_url: to_data_url_preview(&res.final_image, 480),
+                    },
+                );
+            }
+            Ok(())
+        })();
+        match result {
+            Ok(()) => {
+                let _ = app2.emit("sweep_done", ());
+            }
+            Err(e) => {
+                let _ = app2.emit("render_error", e);
+                let _ = app2.emit("sweep_done", ());
+            }
+        }
+        state.busy.store(false, Ordering::SeqCst);
+    });
+    Ok(())
+}
+
 #[tauri::command]
 fn save_image(state: State<'_, RenderState>, dest: String) -> Result<(), String> {
     let guard = state.final_image.lock().unwrap();
@@ -316,7 +410,8 @@ pub fn run() {
             load_image,
             start_render,
             save_image,
-            get_presets
+            get_presets,
+            start_sweep
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
