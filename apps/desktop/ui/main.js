@@ -40,10 +40,11 @@ const SLIDERS = [
   "pixels", "resolution", "palette", "posterize_blur", "normal_blur",
   "strokes_scale", "wet", "saturation", "depth_detail", "out_long",
   "focus_range", "detail_min", "detail_max", "line_strength", "line_width",
+  "line_tone", "lightness",
   "paper_texture", "paper_border", "pigment", "edge_darken",
   "focus_depth", "hard_quantile", "standard_quantile", "side_sample_prob",
 ];
-const SELECTS = ["hard_brush", "standard_brush", "soft_brush", "color_space"];
+const SELECTS = ["hard_brush", "standard_brush", "soft_brush", "color_space", "line_blend"];
 
 // フォーカス位置（プレビュー上の正規化座標）。クリックで設定、ダブルクリックで解除
 let focusPoint = null;
@@ -73,6 +74,8 @@ const PARAM_HELP = {
   detail_max: "焦点付近の細かさ上限（1 超でさらに細密）",
   line_strength: "鉛筆下書き風の輪郭線の濃さ（0 で無効）",
   line_width: "輪郭線の太さ。1 未満で細線化",
+  line_tone: "線の明るさ。低いほど濃く沈む（合成モードに使う）",
+  lightness: "1 超でハイライトが紙の白へ飛び、明るく澄んだ発色になる",
   focus_depth: "プレビューでクリック指定していないときの焦点深度（0=最前面、1=最奥）",
   hard_quantile: "密度がこの分位数を超える領域にハードブラシを使う",
   standard_quantile: "密度がこの分位数を超える領域にスタンダードブラシを使う",
@@ -174,7 +177,7 @@ for (const name of SLIDERS) {
 }
 
 // セレクト・チェックボックス・シードの変更も自動プレビュー対象
-for (const id of ["p-hard_brush", "p-standard_brush", "p-soft_brush", "p-color_space", "p-depth_invert", "p-seed", "p-process_gif"]) {
+for (const id of ["p-hard_brush", "p-standard_brush", "p-soft_brush", "p-color_space", "p-line_blend", "p-depth_invert", "p-seed", "p-process_gif"]) {
   $(id).addEventListener("change", () => scheduleAutoPreview());
 }
 
@@ -484,6 +487,9 @@ function collectParams() {
     detail_max: num("detail_max"),
     line_strength: num("line_strength"),
     line_width: num("line_width"),
+    line_blend: $("p-line_blend").value,
+    line_tone: num("line_tone"),
+    lightness: num("lightness"),
     paper_texture: num("paper_texture"),
     paper_border: num("paper_border"),
     pigment: num("pigment"),

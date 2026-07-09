@@ -25,11 +25,13 @@ pub fn presets() -> Vec<Preset> {
             description: "透明顔料のグレーズ + エッジ暗色化 + 粒状化。Waterlogue 風",
             params: Params {
                 pigment: 0.85,
-                edge_darken: 0.65,
+                edge_darken: 0.75,
                 wet: 0.28,
                 saturation: 1.3,
+                lightness: 1.35,
                 paper_texture: 0.6,
-                line_strength: 0.25,
+                line_strength: 0.3,
+                line_tone: 0.45,
                 brush_size: 17.0,
                 // 水彩専用ブラシ: 大きな面は wash、置き染みは bleed、
                 // 細部はかすれ筆でドライブラシの質感

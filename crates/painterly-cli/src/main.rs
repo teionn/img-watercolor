@@ -135,6 +135,16 @@ struct Args {
     /// 輪郭線の太さ（キャンバス px） [既定: 1.0]
     #[arg(long)]
     line_width: Option<f32>,
+    /// 輪郭線の合成モード: multiply / softlight / overlay / hardlight / graphite
+    /// [既定: multiply（下の色を拾って暗くする）]
+    #[arg(long)]
+    line_blend: Option<String>,
+    /// 輪郭線のトーン 0..1（合成に使う線の明るさ。低いほど濃い） [既定: 0.3]
+    #[arg(long)]
+    line_tone: Option<f32>,
+    /// ハイライトウォッシュ。1 超でハイライトが紙の白へ飛ぶ [既定: 1.0]
+    #[arg(long)]
+    lightness: Option<f32>,
     /// 紙のテクスチャの強さ 0..1 [既定: 0.35]
     #[arg(long)]
     paper_texture: Option<f32>,
@@ -224,7 +234,9 @@ fn main() {
         depth_detail <- depth_detail, focus_depth <- focus_depth,
         focus_range <- focus_range, detail_min <- detail_min,
         detail_max <- detail_max, line_strength <- line_strength,
-        line_width <- line_width, paper_texture <- paper_texture,
+        line_width <- line_width, line_blend <- line_blend,
+        line_tone <- line_tone, lightness <- lightness,
+        paper_texture <- paper_texture,
         paper_border <- paper_border, pigment <- pigment,
         edge_darken <- edge_darken,
     );

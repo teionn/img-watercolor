@@ -112,6 +112,16 @@ pub struct Params {
     pub line_strength: f32,
     /// 輪郭線の太さ（キャンバス px、半径）
     pub line_width: f32,
+    /// 輪郭線の合成モード。下地の色を拾って暗くする（真っ黒のインクにしない）:
+    /// "multiply"（乗算、色相保持で確実に沈む）/ "softlight" / "overlay" /
+    /// "hardlight" / "graphite"（旧来の固定グラファイト色）
+    pub line_blend: String,
+    /// 輪郭線のトーン（合成に使う線の明るさ 0..1）。低いほど濃く沈む。
+    /// graphite モードでは無視される
+    pub line_tone: f32,
+    /// ハイライトウォッシュ 1.0=無効。1 超でハイライトが紙の白へ飛び、
+    /// 明るく澄んだ水彩の発色になる（v' = 1-(1-v)^lightness）
+    pub lightness: f32,
     /// 紙のテクスチャの強さ 0..1（0 = なし）。最終出力に紙目を乗せる。
     /// pigment > 0 のときは粒状化（顔料が紙の目に沈む）の強さも兼ねる
     pub paper_texture: f32,
@@ -193,6 +203,9 @@ impl Default for Params {
             detail_max: 1.15,
             line_strength: 0.4,
             line_width: 1.0,
+            line_blend: "multiply".into(),
+            line_tone: 0.3,
+            lightness: 1.0,
             paper_texture: 0.35,
             paper_border: 0.0,
             pigment: 0.0,
@@ -406,6 +419,17 @@ pub fn run_pipeline(
             let mut hsv = color::rgb_to_hsv(px.0);
             hsv[1] = ((hsv[1] as f32 * p.saturation).clamp(0.0, 255.0)) as u8;
             px.0 = color::hsv_to_rgb(hsv);
+        }
+    }
+    // ハイライトウォッシュ: v' = 1-(1-v)^lightness。1 超でハイライトが紙の白へ飛び、
+    // 水彩らしい「明るく澄んだ」発色になる（Waterlogue の輝度感）
+    if (p.lightness - 1.0).abs() > f32::EPSILON {
+        let k = p.lightness.max(0.2);
+        for px in target_u8.pixels_mut() {
+            for c in 0..3 {
+                let v = px.0[c] as f32 / 255.0;
+                px.0[c] = ((1.0 - (1.0 - v).powf(k)) * 255.0).round() as u8;
+            }
         }
     }
     let mut target = Rgb32::new(cw, ch);
@@ -720,9 +744,45 @@ pub fn run_pipeline(
             }
             stage!("line_art", vis);
 
-            // 合成: インクはグラファイトの青灰色。ボケ領域では焦点重みに応じて薄く
+            // 合成: 下地の色を拾って暗くする（乗算 / ソフトライト / オーバーレイ /
+            // ハードライト）。顔料が縁に溜まったような色付きの線になり、
+            // 真っ黒なインクにならない。ボケ領域では焦点重みに応じて薄く
             let focus_hi = resize_gray_bilinear(&focus_w, fw, fh);
-            const GRAPHITE: [f32; 3] = [0.16 * 255.0, 0.16 * 255.0, 0.20 * 255.0];
+            let tone = p.line_tone.clamp(0.0, 1.0);
+            let blend = |b: f32| -> f32 {
+                match p.line_blend.as_str() {
+                    "softlight" => {
+                        // W3C 定義のソフトライト
+                        if tone <= 0.5 {
+                            b - (1.0 - 2.0 * tone) * b * (1.0 - b)
+                        } else {
+                            let d = if b <= 0.25 {
+                                ((16.0 * b - 12.0) * b + 4.0) * b
+                            } else {
+                                b.sqrt()
+                            };
+                            b + (2.0 * tone - 1.0) * (d - b)
+                        }
+                    }
+                    "overlay" => {
+                        if b < 0.5 {
+                            2.0 * b * tone
+                        } else {
+                            1.0 - 2.0 * (1.0 - b) * (1.0 - tone)
+                        }
+                    }
+                    "hardlight" => {
+                        if tone < 0.5 {
+                            2.0 * b * tone
+                        } else {
+                            1.0 - 2.0 * (1.0 - b) * (1.0 - tone)
+                        }
+                    }
+                    _ => b * tone, // multiply
+                }
+            };
+            const GRAPHITE: [f32; 3] = [0.16, 0.16, 0.20];
+            let graphite = p.line_blend == "graphite";
             for (i, px) in final_img.pixels_mut().enumerate() {
                 let mut alpha = m.data[i].clamp(0.0, 1.0) * p.line_strength;
                 if p.depth_detail > 0.0 {
@@ -732,8 +792,9 @@ pub fn run_pipeline(
                     continue;
                 }
                 for c in 0..3 {
-                    px.0[c] =
-                        (px.0[c] as f32 * (1.0 - alpha) + GRAPHITE[c] * alpha).round() as u8;
+                    let b = px.0[c] as f32 / 255.0;
+                    let ink = if graphite { GRAPHITE[c] } else { blend(b).clamp(0.0, 1.0) };
+                    px.0[c] = ((b * (1.0 - alpha) + ink * alpha) * 255.0).round() as u8;
                 }
             }
         }
