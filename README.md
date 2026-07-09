@@ -101,7 +101,8 @@ cargo run --release -p painterly-cli -- input/cat.png --depth-detail 0.7
   無ければ組み込みのヒューリスティック（合焦度 + 大気遠近 + 上下事前分布）
 - `--focus-x/--focus-y`（GUI ではクリック / タップ）— フォーカス位置。
   `--focus-range` で被写界深度、`--detail-min/--detail-max` で粗さ・細かさの範囲
-- `--line-strength` / `--line-width` — 輪郭線（主線）を重ねる。ボケ領域では自動的に薄くなる
+- `--line-strength` / `--line-width` — 鉛筆下書き風の輪郭線を重ねる（元画像から抽出、
+  ボケ領域では自動的に薄くなる）
 - `--depth my_depth.png` — 外部デプス（白 = 手前）を直接指定
 - `--depth-invert` — 手前/奥の反転。中間画像 `depth_map.png` / `line_art.png` で確認できる
 

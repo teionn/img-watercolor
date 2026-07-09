@@ -204,6 +204,8 @@ pub fn run_pipeline(
         gray.data[i] = (px.0[0] as f32 * 0.299 + px.0[1] as f32 * 0.587 + px.0[2] as f32 * 0.114)
             / 255.0;
     }
+    // ぼかす前のグレースケールは輪郭線（鉛筆下書き）の抽出に使う
+    let gray_sharp = gray.clone();
     let gray = gaussian_blur(&gray, p.normal_blur.max(0.5));
     let gx = crate::buf::sobel_x(&gray);
     let gy = crate::buf::sobel_y(&gray);
@@ -293,48 +295,57 @@ pub fn run_pipeline(
         ];
     }
 
-    // 輪郭線マスク: パレット吸着済みターゲットの色替わり箇所（描画後に重ねる）。
-    // 境界を跨ぐ色距離で重み付けする——滑らかなグラデーションの減色バンディング
-    // （床や壁の等高線状ノイズ）は隣接色が近いので消え、
-    // 被写体の輪郭のような色差の大きい境界だけが残る
+    // 輪郭線マスク: 「鉛筆で描いた下書き」を目指す。
+    // 減色後ではなく **元画像**（ぼかす前のグレースケール）からエッジを取るので、
+    // 減色で潰れた顔のパーツ・髪・布のディテール線も拾える。
+    // 絵のタッチとは独立したレイヤーとして描画後に重ねる
     let line_mask = if p.line_strength > 0.0 {
-        let color_dist = |a: &image::Rgb<u8>, b: &image::Rgb<u8>| -> f32 {
-            let dr = a.0[0] as f32 - b.0[0] as f32;
-            let dg = a.0[1] as f32 - b.0[1] as f32;
-            let db = a.0[2] as f32 - b.0[2] as f32;
-            (dr * dr + dg * dg + db * db).sqrt() / 441.7 // 最大距離で正規化
-        };
         let smoothstep = |e0: f32, e1: f32, x: f32| -> f32 {
             let t = ((x - e0) / (e1 - e0)).clamp(0.0, 1.0);
             t * t * (3.0 - 2.0 * t)
         };
-        // 輪郭は 2〜3px の中間色バンドを経て遷移するため、隣接比較では
-        // 色差が拾えない。±2px スパンの対称比較で境界全体のコントラストを見る
+        // 軽い平滑化 → 勾配強度 → 分位数正規化 → ソフト閾値
+        let g1 = gaussian_blur(&gray_sharp, 1.2);
+        let egx = crate::buf::sobel_x(&g1);
+        let egy = crate::buf::sobel_y(&g1);
         let mut m = Gray::new(cw, ch);
-        const SPAN: usize = 2;
-        for y in 0..ch {
-            for x in 0..cw {
-                let xl = x.saturating_sub(SPAN) as u32;
-                let xr = (x + SPAN).min(cw - 1) as u32;
-                let yt = y.saturating_sub(SPAN) as u32;
-                let yb = (y + SPAN).min(ch - 1) as u32;
-                let dh = color_dist(
-                    target_u8.get_pixel(xl, y as u32),
-                    target_u8.get_pixel(xr, y as u32),
-                );
-                let dv = color_dist(
-                    target_u8.get_pixel(x as u32, yt),
-                    target_u8.get_pixel(x as u32, yb),
-                );
-                // 色差 10% 以下は無視、28% 以上でフル強度
-                m.set(x, y, smoothstep(0.10, 0.28, dh.max(dv)));
-            }
+        for i in 0..cw * ch {
+            m.data[i] = egx.data[i].hypot(egy.data[i]);
         }
-        let m = dilate(&m, p.line_width);
-        let m = gaussian_blur(&m, 0.6);
+        let p97 = quantile(&m.data, 0.97) + 1e-8;
+        for v in &mut m.data {
+            *v = smoothstep(0.25, 0.70, *v / p97);
+        }
+        if p.line_width > 1.0 {
+            m = dilate(&m, p.line_width - 1.0);
+        }
+        let mut m = gaussian_blur(&m, 0.5);
+
+        // 鉛筆の質感: 細かい紙目 + 粗いノイズで線を途切れさせる（シード固定で再現可能）
+        let mut nrng = Rng64::seed_from(p.seed ^ 0x70656e63); // "penc"
+        let mut noise = Gray::new(cw, ch);
+        for v in &mut noise.data {
+            *v = nrng.random();
+        }
+        let fine = gaussian_blur(&noise, 0.9);
+        let coarse = gaussian_blur(&noise, 3.5);
+        let norm = |g: &Gray| -> (f32, f32) {
+            let mn = g.data.iter().cloned().fold(f32::MAX, f32::min);
+            let mx = g.data.iter().cloned().fold(f32::MIN, f32::max);
+            (mn, (mx - mn).max(1e-8))
+        };
+        let (fmn, frange) = norm(&fine);
+        let (cmn, crange) = norm(&coarse);
+        for i in 0..cw * ch {
+            let nf = (fine.data[i] - fmn) / frange;
+            let nc = (coarse.data[i] - cmn) / crange;
+            let grain = (0.60 + 0.40 * nf) * (0.55 + 0.45 * smoothstep(0.25, 0.75, nc));
+            m.data[i] = (m.data[i] * grain).clamp(0.0, 1.0);
+        }
+
         let mut vis = RgbImage::new(cw as u32, ch as u32);
         for (i, px) in vis.pixels_mut().enumerate() {
-            let v = ((1.0 - m.data[i].clamp(0.0, 1.0)) * 255.0) as u8;
+            let v = ((1.0 - m.data[i]) * 255.0) as u8;
             px.0 = [v, v, v];
         }
         stage!("line_art", vis);
@@ -455,9 +466,10 @@ pub fn run_pipeline(
         }
     }
 
-    // 輪郭線を重ねる。インクは局所色を落としたもの（真っ黒より絵に馴染む）。
+    // 輪郭線（鉛筆下書き）を重ねる。インクはグラファイトの青灰色。
     // ボケ領域（フォーカス重みが低い）では線も薄くして被写界深度と整合させる
     if let Some(mask) = &line_mask {
+        const GRAPHITE: [f32; 3] = [0.16, 0.16, 0.20];
         for i in 0..cw * ch {
             let mut a = mask.data[i].clamp(0.0, 1.0) * p.line_strength;
             if p.depth_detail > 0.0 {
@@ -466,14 +478,9 @@ pub fn run_pipeline(
             if a <= 0.0 {
                 continue;
             }
-            let ink = [
-                target.data[i][0] * 0.25,
-                target.data[i][1] * 0.25,
-                target.data[i][2] * 0.25,
-            ];
             let px = &mut canvas.data[i];
             for c in 0..3 {
-                px[c] = px[c] * (1.0 - a) + ink[c] * a;
+                px[c] = px[c] * (1.0 - a) + GRAPHITE[c] * a;
             }
         }
     }
