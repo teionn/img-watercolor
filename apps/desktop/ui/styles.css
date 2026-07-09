@@ -10,7 +10,7 @@ body {
 }
 
 #sidebar {
-  width: 280px;
+  width: 308px;
   flex: 0 0 auto;
   padding: 14px;
   background: #26272b;
@@ -44,15 +44,52 @@ button:disabled { opacity: 0.45; cursor: default; }
   background: #2b2d31;
   border-radius: 8px;
 }
-.group-title { color: #eceef2; font-size: 12px; }
-.group-title span { color: #6b6f78; font-size: 11px; }
+details.group { display: block; }
+details.group > *:not(summary) { margin-top: 8px; }
+summary {
+  cursor: pointer;
+  color: #eceef2;
+  font-size: 12px;
+  user-select: none;
+}
+summary span { color: #6b6f78; font-size: 11px; }
+summary:hover { color: #fff; }
+
+/* 値の直接入力ボックス */
+input[type="number"].val-num {
+  width: 52px;
+  padding: 0 4px;
+  margin: 0 2px;
+  font-size: 12px;
+  text-align: right;
+  background: #26272b;
+  color: #7fb2e8;
+  border: 1px solid #3c3e44;
+  border-radius: 4px;
+  -moz-appearance: textfield;
+}
+.val-num::-webkit-inner-spin-button { display: none; }
+/* 既定値から変更された項目のハイライト */
+label.changed .val-num { color: #ffd45e; border-color: #6b5a2a; }
+
+button.mini {
+  padding: 4px 8px;
+  font-size: 11px;
+  color: #9aa0ab;
+}
 
 /* パラメータ走査（スイープ）ボタンと比較パネル */
+.param-head {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.param-head .pname { flex: 1 1 auto; min-width: 0; }
+.param-head .unit { color: #6b6f78; font-size: 11px; }
+
 .sweep-btn {
   flex: 0 0 auto;
-  float: right;
   padding: 0 6px;
-  margin-left: 6px;
   font-size: 10px;
   line-height: 16px;
   border: 1px solid #3c3e44;

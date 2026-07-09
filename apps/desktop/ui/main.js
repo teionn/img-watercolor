@@ -46,15 +46,119 @@ const SELECTS = ["hard_brush", "standard_brush", "soft_brush", "color_space"];
 // フォーカス位置（プレビュー上の正規化座標）。クリックで設定、ダブルクリックで解除
 let focusPoint = null;
 
+// 各パラメータの説明（ラベルのツールチップ）
+const PARAM_HELP = {
+  pixels: "形をどれだけ大づかみに捉えるか。小さいほど単純化される",
+  resolution: "描画キャンバスの解像度。小さいほど抽象的・タッチが大きい",
+  palette: "減色後の色数",
+  posterize_blur: "減色前のぼかし。大きいと色面が滑らかに繋がる",
+  normal_blur: "方向場の平滑さ。大きいとストロークが大きくうねる",
+  brush_size: "基準ブラシ半径（キャンバス px）",
+  strokes_scale: "ストローク本数の倍率",
+  wet: "筆を置くとき下の色と混ざる比率（ウェットブレンディング）",
+  saturation: "彩度の倍率",
+  out_long: "保存画像の長辺ピクセル数",
+  depth_detail: "奥行きによるタッチ粗密の強さ（0 で無効）",
+  focus_range: "焦点から細かさが保たれる深度範囲。小さいほど被写界深度が浅い",
+  detail_min: "フォーカス範囲外（ボケ側）の粗さ下限",
+  detail_max: "焦点付近の細かさ上限（1 超でさらに細密）",
+  line_strength: "鉛筆下書き風の輪郭線の濃さ（0 で無効）",
+  line_width: "輪郭線の太さ",
+  pigment: "透明水彩のグレーズ度（0 = 油彩、1 = 紙の白が透ける水彩）",
+  edge_darken: "塗りの縁に顔料が溜まる水彩特有の縁取り",
+  paper_texture: "紙目の強さ（水彩時は粒状化も兼ねる）",
+  paper_border: "画像外周に残す紙の白フチ（短辺比）",
+};
+
+// 既定値（HTML の初期値 = コアの Params::default() と一致させてある）
+const DEFAULTS = {};
+
 for (const name of SLIDERS) {
   const input = $(`p-${name}`);
-  const label = $(`v-${name}`);
-  const fmt = () => {
-    const v = parseFloat(input.value);
-    label.textContent = Number.isInteger(parseFloat(input.step)) ? v : v.toFixed(2).replace(/0+$/, "").replace(/\.$/, ".0");
+  const span = $(`v-${name}`);
+  const label = input.parentElement;
+  DEFAULTS[name] = parseFloat(input.value);
+  if (PARAM_HELP[name]) label.title = PARAM_HELP[name];
+
+  const decimals = Number.isInteger(parseFloat(input.step)) ? 0
+    : (String(input.step).split(".")[1] || "").length;
+
+  // ラベル行を「名前 | 数値入力 | 単位 | 走査」の 1 行 flex に組み直す
+  const head = document.createElement("div");
+  head.className = "param-head";
+  const pname = document.createElement("span");
+  pname.className = "pname";
+  let nameText = "";
+  for (let node = label.firstChild; node && node !== span; ) {
+    const next = node.nextSibling;
+    if (node.nodeType === Node.TEXT_NODE) nameText += node.textContent;
+    label.removeChild(node);
+    node = next;
+  }
+  pname.textContent = nameText.trim();
+  let unitText = "";
+  for (let node = span.nextSibling; node && node !== input; ) {
+    const next = node.nextSibling;
+    if (node.nodeType === Node.TEXT_NODE) unitText += node.textContent;
+    label.removeChild(node);
+    node = next;
+  }
+  label.insertBefore(head, span);
+  head.appendChild(pname);
+  head.appendChild(span);
+
+  // 値表示を直接入力できる数値ボックスに置き換える
+  const num = document.createElement("input");
+  num.type = "number";
+  num.className = "val-num";
+  num.min = input.min;
+  num.max = input.max;
+  num.step = input.step;
+  span.replaceWith(num);
+  if (unitText.trim()) {
+    const u = document.createElement("span");
+    u.className = "unit";
+    u.textContent = unitText.trim();
+    head.appendChild(u);
+  }
+
+  const sync = () => {
+    if (document.activeElement !== num) {
+      num.value = parseFloat(input.value).toFixed(decimals);
+    }
+    // 既定値から変更されている項目をハイライト
+    label.classList.toggle("changed", Math.abs(parseFloat(input.value) - DEFAULTS[name]) > 1e-9);
   };
-  input.addEventListener("input", fmt);
-  fmt();
+  input.addEventListener("input", () => {
+    sync();
+    scheduleAutoPreview();
+  });
+  sync();
+
+  num.addEventListener("change", () => {
+    let v = parseFloat(num.value);
+    if (Number.isNaN(v)) v = DEFAULTS[name];
+    v = Math.min(parseFloat(input.max), Math.max(parseFloat(input.min), v));
+    input.value = v;
+    input.dispatchEvent(new Event("input"));
+    num.blur();
+  });
+
+  // ホイールで微調整（Shift で 10 ステップ）
+  input.addEventListener("wheel", (e) => {
+    e.preventDefault();
+    const step = (parseFloat(input.step) || 1) * (e.shiftKey ? 10 : 1);
+    const v = parseFloat(input.value) - Math.sign(e.deltaY) * step;
+    input.value = Math.min(parseFloat(input.max), Math.max(parseFloat(input.min), v));
+    input.dispatchEvent(new Event("input"));
+  }, { passive: false });
+
+  // ダブルクリックで既定値に戻す
+  input.addEventListener("dblclick", () => {
+    input.value = DEFAULTS[name];
+    input.dispatchEvent(new Event("input"));
+  });
+
   // 走査ボタン: このパラメータだけを段階的に変えた比較レンダリング
   const btn = document.createElement("button");
   btn.className = "sweep-btn";
@@ -64,7 +168,12 @@ for (const name of SLIDERS) {
     e.preventDefault();
     startSweep(name);
   });
-  label.after(btn);
+  head.appendChild(btn);
+}
+
+// セレクト・チェックボックス・シードの変更も自動プレビュー対象
+for (const id of ["p-hard_brush", "p-standard_brush", "p-soft_brush", "p-color_space", "p-depth_invert", "p-seed"]) {
+  $(id).addEventListener("change", () => scheduleAutoPreview());
 }
 
 function collectParams() {
@@ -166,8 +275,8 @@ $("btn-open").addEventListener("click", async () => {
   if (typeof path === "string") await openImage(path);
 });
 
-$("btn-render").addEventListener("click", async () => {
-  if (!imagePath || rendering) return;
+async function doRender() {
+  if (!imagePath || rendering || sweeping) return;
   rendering = true;
   stopReplay();
   processFrames = [];
@@ -182,6 +291,43 @@ $("btn-render").addEventListener("click", async () => {
     $("btn-render").disabled = false;
     setStatus(`開始できません: ${e}`);
   }
+}
+
+$("btn-render").addEventListener("click", doRender);
+
+// --- 自動プレビュー: パラメータ変更から少し待って自動レンダリング ---
+let autoTimer = null;
+let autoDirty = false;
+
+function scheduleAutoPreview() {
+  if (!$("auto-preview").checked || !imagePath) return;
+  autoDirty = true;
+  clearTimeout(autoTimer);
+  autoTimer = setTimeout(() => {
+    if (rendering || sweeping) return; // 完了時に autoDirty を見て再実行される
+    autoDirty = false;
+    doRender();
+  }, 700);
+}
+
+$("auto-preview").addEventListener("change", () => {
+  if ($("auto-preview").checked) scheduleAutoPreview();
+});
+
+// --- 全パラメータを既定値へ ---
+$("btn-reset").addEventListener("click", () => {
+  const base = presets.find((p) => p.name === "基本")?.params;
+  if (base) {
+    applyParams(base);
+    if (presetSelect.options.length) presetSelect.value = "基本";
+  } else {
+    for (const name of SLIDERS) {
+      const input = $(`p-${name}`);
+      input.value = DEFAULTS[name];
+      input.dispatchEvent(new Event("input"));
+    }
+  }
+  setStatus("既定値に戻しました");
 });
 
 $("btn-process").addEventListener("click", () => {
@@ -231,6 +377,8 @@ listen("done", ({ payload }) => {
   $("btn-save").disabled = false;
   $("btn-process").disabled = processFrames.length === 0;
   setStatus(`完成: ${payload.strokes} ストローク, ${(payload.millis / 1000).toFixed(1)} 秒`);
+  // レンダリング中にパラメータが変わっていたら自動プレビューを続ける
+  if (autoDirty) scheduleAutoPreview();
 });
 
 listen("render_error", ({ payload }) => {
@@ -267,6 +415,7 @@ preview.addEventListener("click", (e) => {
   focusMarker.style.top = `${e.clientY - wr.top}px`;
   focusMarker.style.display = "block";
   focusState.textContent = `（焦点: ${focusPoint.x.toFixed(2)}, ${focusPoint.y.toFixed(2)} — ダブルクリックで解除）`;
+  scheduleAutoPreview();
 });
 
 preview.addEventListener("dblclick", clearFocus);
