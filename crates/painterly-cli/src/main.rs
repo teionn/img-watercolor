@@ -50,6 +50,12 @@ struct Args {
     /// 基準ブラシ半径（キャンバス px） [既定: 15]
     #[arg(long)]
     brush_size: Option<f32>,
+    /// ストローク長の上限（半径の倍数）。低いと点描風、高いと流れる長いタッチ [既定: 3.0]
+    #[arg(long)]
+    brush_length: Option<f32>,
+    /// 色の境を元絵に忠実にする度合い 0..1。高いほど元画像の細かい色境界で止まり色も元絵寄り [既定: 0.5]
+    #[arg(long)]
+    color_fidelity: Option<f32>,
     /// ハードブラシ: ビルトイン名または グレースケール PNG のパス [既定: triangle]
     #[arg(long)]
     hard_brush: Option<String>,
@@ -193,6 +199,7 @@ fn main() {
         pixels <- pixels, resolution <- resolution, palette <- palette,
         color_space <- color_space, posterize_blur <- posterize_blur,
         normal_blur <- normal_blur, brush_size <- brush_size,
+        brush_length <- brush_length, color_fidelity <- color_fidelity,
         hard_brush <- hard_brush, standard_brush <- standard_brush,
         soft_brush <- soft_brush, strokes_scale <- strokes, wet <- wet,
         saturation <- saturation, out_long <- out_long, seed <- seed,

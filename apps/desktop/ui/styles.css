@@ -94,7 +94,7 @@ button.mini {
 }
 .hint { color: #6b6f78; font-size: 11px; min-height: 1em; }
 
-/* パラメータ走査（スイープ）ボタンと比較パネル */
+/* パラメータ行のレイアウト（名前 | 数値入力 | 単位） */
 .param-head {
   display: flex;
   align-items: center;
@@ -103,70 +103,27 @@ button.mini {
 .param-head .pname { flex: 1 1 auto; min-width: 0; }
 .param-head .unit { color: #6b6f78; font-size: 11px; }
 
-.sweep-btn {
-  flex: 0 0 auto;
-  padding: 0 6px;
-  font-size: 10px;
-  line-height: 16px;
-  border: 1px solid #3c3e44;
-  border-radius: 4px;
-  background: #33353b;
-  color: #9fb8d4;
-  cursor: pointer;
-}
-.sweep-btn:hover { background: #3d4048; color: #cfe2f5; }
-
-#sweep-panel[hidden] { display: none; }
-#sweep-panel {
-  position: absolute;
-  inset: 12px;
-  background: rgba(24, 25, 28, 0.96);
-  border: 1px solid #3c3e44;
-  border-radius: 10px;
-  display: flex;
-  flex-direction: column;
-  padding: 12px;
-  gap: 10px;
-  z-index: 5;
-}
-#sweep-header {
+/* 密度カーブエディタ */
+.curve-note { color: #6b6f78; font-size: 11px; margin: 2px 0 8px; line-height: 1.4; }
+.curve-block { margin-bottom: 8px; }
+.curve-cap {
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  color: #eceef2;
-}
-#sweep-header button { flex: 0 0 auto; padding: 4px 12px; }
-#sweep-grid {
-  flex: 1;
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 10px;
-  overflow-y: auto;
-  min-height: 0;
-}
-.sweep-cell {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  cursor: pointer;
-  color: #b9bcc4;
+  align-items: baseline;
   font-size: 12px;
+  color: #cdd0d6;
+  margin-bottom: 2px;
 }
-.sweep-cell img {
+.curve-cap .curve-val { color: #7fa8d0; font-size: 11px; }
+canvas.curve {
+  display: block;
   width: 100%;
-  height: 100%;
-  min-height: 0;
-  object-fit: contain;
-  border-radius: 4px;
-  border: 2px solid transparent;
-}
-.sweep-cell:hover img { border-color: #4a8ccc; }
-.sweep-cell.pending {
-  justify-content: center;
-  border: 1px dashed #3c3e44;
-  border-radius: 4px;
-  cursor: default;
+  height: 96px;
+  background: #202227;
+  border: 1px solid #34363c;
+  border-radius: 6px;
+  touch-action: none;
+  cursor: crosshair;
 }
 
 #focus-marker {

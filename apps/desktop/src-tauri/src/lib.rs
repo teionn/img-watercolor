@@ -67,6 +67,15 @@ struct ParamsDto {
     posterize_blur: f32,
     normal_blur: f32,
     brush_size: f32,
+    brush_length: f32,
+    /// 色の境を元絵に忠実にする度合い 0..1
+    color_fidelity: f32,
+    /// 密度→半径(px) カーブの制御点 [[密度,半径], ...]。空なら brush_size 従来動作
+    #[serde(default)]
+    size_curve: Vec<[f32; 2]>,
+    /// 密度→ストローク長倍率カーブの制御点 [[密度,倍率], ...]。空なら brush_length
+    #[serde(default)]
+    length_curve: Vec<[f32; 2]>,
     hard_brush: String,
     standard_brush: String,
     soft_brush: String,
@@ -99,6 +108,18 @@ struct ParamsDto {
     external_depth_path: Option<String>,
 }
 
+/// カーブ未指定（空）のとき、スカラー brush_size から密度→半径カーブを生成する。
+/// brush_size_at の gamma 0.7 を 3 点でサンプルし、UI が編集できる制御点にする
+fn synth_size_curve(brush_size: f32) -> Vec<[f32; 2]> {
+    let smax = brush_size * 0.9;
+    let smin = brush_size * 0.35;
+    [0.0f32, 0.5, 1.0].iter().map(|&d| [d, smax + (smin - smax) * d.powf(0.7)]).collect()
+}
+/// カーブ未指定のとき、スカラー brush_length から一律のストローク長カーブを生成する
+fn synth_length_curve(brush_length: f32) -> Vec<[f32; 2]> {
+    vec![[0.0, brush_length], [1.0, brush_length]]
+}
+
 impl Default for ParamsDto {
     fn default() -> Self {
         let p = Params::default();
@@ -110,6 +131,10 @@ impl Default for ParamsDto {
             posterize_blur: p.posterize_blur,
             normal_blur: p.normal_blur,
             brush_size: p.brush_size,
+            brush_length: p.brush_length,
+            color_fidelity: p.color_fidelity,
+            size_curve: if p.size_curve.is_empty() { synth_size_curve(p.brush_size) } else { p.size_curve },
+            length_curve: if p.length_curve.is_empty() { synth_length_curve(p.brush_length) } else { p.length_curve },
             hard_brush: p.hard_brush,
             standard_brush: p.standard_brush,
             soft_brush: p.soft_brush,
@@ -152,6 +177,10 @@ impl From<ParamsDto> for Params {
             posterize_blur: d.posterize_blur,
             normal_blur: d.normal_blur,
             brush_size: d.brush_size,
+            brush_length: d.brush_length,
+            color_fidelity: d.color_fidelity,
+            size_curve: d.size_curve,
+            length_curve: d.length_curve,
             hard_brush: d.hard_brush,
             standard_brush: d.standard_brush,
             soft_brush: d.soft_brush,
@@ -193,6 +222,10 @@ impl From<&Params> for ParamsDto {
             posterize_blur: p.posterize_blur,
             normal_blur: p.normal_blur,
             brush_size: p.brush_size,
+            brush_length: p.brush_length,
+            color_fidelity: p.color_fidelity,
+            size_curve: if p.size_curve.is_empty() { synth_size_curve(p.brush_size) } else { p.size_curve.clone() },
+            length_curve: if p.length_curve.is_empty() { synth_length_curve(p.brush_length) } else { p.length_curve.clone() },
             hard_brush: p.hard_brush.clone(),
             standard_brush: p.standard_brush.clone(),
             soft_brush: p.soft_brush.clone(),
@@ -385,108 +418,6 @@ fn start_render(
     Ok(())
 }
 
-/// スイープ対象フィールドへ値を設定する（フロントエンドのスライダー名と対応）
-fn apply_sweep_value(p: &mut Params, name: &str, v: f64) -> Result<(), String> {
-    match name {
-        "pixels" => p.pixels = v as u32,
-        "resolution" => p.resolution = v as u32,
-        "palette" => p.palette = v as usize,
-        "posterize_blur" => p.posterize_blur = v as f32,
-        "normal_blur" => p.normal_blur = v as f32,
-        "brush_size" => p.brush_size = v as f32,
-        "strokes_scale" => p.strokes_scale = v as f32,
-        "wet" => p.wet = v as f32,
-        "saturation" => p.saturation = v as f32,
-        "out_long" => p.out_long = v as u32,
-        "depth_detail" => p.depth_detail = v as f32,
-        "focus_range" => p.focus_range = v as f32,
-        "detail_min" => p.detail_min = v as f32,
-        "detail_max" => p.detail_max = v as f32,
-        "line_strength" => p.line_strength = v as f32,
-        "line_width" => p.line_width = v as f32,
-        "paper_texture" => p.paper_texture = v as f32,
-        "paper_border" => p.paper_border = v as f32,
-        "pigment" => p.pigment = v as f32,
-        "edge_darken" => p.edge_darken = v as f32,
-        "focus_depth" => p.focus_depth = v as f32,
-        "hard_quantile" => p.hard_quantile = v as f32,
-        "standard_quantile" => p.standard_quantile = v as f32,
-        "side_sample_prob" => p.side_sample_prob = v as f32,
-        "seed" => p.seed = v as u64,
-        other => return Err(format!("走査できないパラメータ: {other}")),
-    }
-    Ok(())
-}
-
-#[derive(Serialize, Clone)]
-struct SweepResult {
-    index: usize,
-    value: f64,
-    data_url: String,
-}
-
-/// パラメータスイープ: 1 つのパラメータを values の各値に変えて連続レンダリングし、
-/// 1 枚できるごとに sweep_result イベントで返す。比較を高速にするため拡大は行わない
-#[tauri::command]
-fn start_sweep(
-    app: AppHandle,
-    state: State<'_, RenderState>,
-    path: String,
-    params: ParamsDto,
-    sweep_param: String,
-    values: Vec<f64>,
-) -> Result<(), String> {
-    if state.busy.swap(true, Ordering::SeqCst) {
-        return Err("レンダリング実行中です".into());
-    }
-    let app2 = app.clone();
-    std::thread::spawn(move || {
-        let state = app2.state::<RenderState>();
-        let result = (|| -> Result<(), String> {
-            let img = image::open(&path).map_err(|e| format!("{path}: {e}"))?.to_rgb8();
-            let dto = params;
-            let mut base: Params = dto.clone().into();
-            let mut brushes = Brushes::new();
-            resolve_brushes(&mut base, &mut brushes)?;
-            // 深度は画像ごとに一定なので走査前に 1 回だけ解決する
-            resolve_depth(&mut base, &img, &dto.external_depth_path, dto.use_depth_model, &state)?;
-            for (index, &value) in values.iter().enumerate() {
-                let mut p = base.clone();
-                apply_sweep_value(&mut p, &sweep_param, value)?;
-                p.out_long = p.resolution; // 拡大なしで高速化（プレビュー用途）
-                let res = painterly_core::run_pipeline(
-                    &img,
-                    None,
-                    &p,
-                    &mut brushes,
-                    Callbacks::default(),
-                    false,
-                )?;
-                let _ = app2.emit(
-                    "sweep_result",
-                    SweepResult {
-                        index,
-                        value,
-                        data_url: to_data_url_preview(&res.final_image, 480),
-                    },
-                );
-            }
-            Ok(())
-        })();
-        match result {
-            Ok(()) => {
-                let _ = app2.emit("sweep_done", ());
-            }
-            Err(e) => {
-                let _ = app2.emit("render_error", e);
-                let _ = app2.emit("sweep_done", ());
-            }
-        }
-        state.busy.store(false, Ordering::SeqCst);
-    });
-    Ok(())
-}
-
 /// ニューラル深度モデルを読み込む。path 未指定なら models/ の既定パスを自動検出。
 /// 成功時は読み込んだパスを返す
 #[tauri::command]
@@ -534,7 +465,6 @@ pub fn run() {
             start_render,
             save_image,
             get_presets,
-            start_sweep,
             load_depth_model,
             save_process_gif
         ])

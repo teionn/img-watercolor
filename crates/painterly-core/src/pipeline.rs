@@ -42,8 +42,23 @@ pub struct Params {
     pub normal_blur: f32,
     /// 基準ブラシ半径（キャンバス px）
     pub brush_size: f32,
+    /// ストローク長の上限（半径に対する倍率）。低いと点描風の短いタッチ、
+    /// 高いとフローに沿った長いタッチ。実際は色領域の境界でさらに打ち切られる。
+    /// size_curve/length_curve が空のときの一律値（CLI 互換）
+    pub brush_length: f32,
+    /// 密度 → ブラシ半径（px）のカーブ。制御点 [密度 0..1, 半径 px] の配列。
+    /// 空なら brush_size からの従来マッピング。非空なら主層の半径をこのカーブで決め、
+    /// 下塗り・細部層はこのカーブの密度 0 の値を基準にスケールする
+    pub size_curve: Vec<[f32; 2]>,
+    /// 密度 → ストローク長倍率のカーブ。制御点 [密度 0..1, 倍率] の配列。
+    /// 空なら brush_length の一律値
+    pub length_curve: Vec<[f32; 2]>,
     /// 輪郭・高密度領域用ブラシ
     pub hard_brush: String,
+    /// 色の境を元絵にどれだけ忠実にするか 0..1。高いほどストロークが元画像の
+    /// 細かい色境界で止まり（色差しきい値を下げる）、塗り色も元画像へ寄せる。
+    /// 低いと減色されたフラットで大づかみな色面になる
+    pub color_fidelity: f32,
     /// 中密度領域用ブラシ
     pub standard_brush: String,
     /// 広い面・低コントラスト領域用ブラシ
@@ -95,6 +110,33 @@ pub struct Params {
     pub edge_darken: f32,
 }
 
+/// 密度 x∈0..1 → 値。制御点は x 昇順の [x, y]。区間内は線形補間、範囲外は端の値で
+/// クランプ。制御点が空のときは呼び出し側でフォールバックする（ここでは 0 を返す）。
+pub fn eval_curve(points: &[[f32; 2]], x: f32) -> f32 {
+    match points {
+        [] => 0.0,
+        [only] => only[1],
+        _ => {
+            if x <= points[0][0] {
+                return points[0][1];
+            }
+            let last = points[points.len() - 1];
+            if x >= last[0] {
+                return last[1];
+            }
+            for w in points.windows(2) {
+                let (a, b) = (w[0], w[1]);
+                if x >= a[0] && x <= b[0] {
+                    let span = b[0] - a[0];
+                    let t = if span.abs() < 1e-6 { 0.0 } else { (x - a[0]) / span };
+                    return a[1] + (b[1] - a[1]) * t;
+                }
+            }
+            last[1]
+        }
+    }
+}
+
 impl Default for Params {
     fn default() -> Self {
         Params {
@@ -105,6 +147,10 @@ impl Default for Params {
             posterize_blur: 2.0,
             normal_blur: 8.0,
             brush_size: 15.0,
+            brush_length: 3.0,
+            size_curve: Vec::new(),
+            length_curve: Vec::new(),
+            color_fidelity: 0.5,
             hard_brush: "triangle".into(),
             standard_brush: "flat".into(),
             soft_brush: "soft".into(),
@@ -308,11 +354,47 @@ pub fn run_pipeline(
         ];
     }
 
+    // 元画像の色（キャンバス解像度、0..1）。ストローク停止の境界判定に使い、
+    // color_fidelity 分だけ塗り色も元画像へ寄せる（色の境・色味を元絵に忠実化）
+    let fidelity = p.color_fidelity.clamp(0.0, 1.0);
+    let boundary = {
+        let mut b = Rgb32::new(cw, ch);
+        for (i, px) in ana.pixels().enumerate() {
+            b.data[i] =
+                [px.0[0] as f32 / 255.0, px.0[1] as f32 / 255.0, px.0[2] as f32 / 255.0];
+        }
+        b
+    };
+    // 忠実度が高いほど塗り色を元画像へブレンド（最大 0.4）。フラットな減色感と
+    // 元絵の色の中間を取る
+    if fidelity > 0.0 {
+        let mix = 0.4 * fidelity;
+        for i in 0..target.data.len() {
+            for c in 0..3 {
+                target.data[i][c] = target.data[i][c] * (1.0 - mix) + boundary.data[i][c] * mix;
+            }
+        }
+    }
+    // 忠実度が高いほど色差しきい値を下げ、元画像の細かい境界で止める
+    let color_tol = 0.12 - 0.075 * fidelity;
+
     // 輪郭線は最終出力解像度で抽出・合成する（キャンバス解像度で描いて拡大すると
     // 太くぼやけるため）。実装は final_img 生成後を参照
 
-    let bs = p.brush_size;
-    let engine = PaintEngine::new(&target, &theta, &coh, &dens);
+    // 太さの基準半径 bs: size_curve があれば密度 0（平坦部）の半径を基準にし、
+    // 下塗り・細部層のスケールに使う。無ければ従来どおり brush_size
+    let use_size_curve = !p.size_curve.is_empty();
+    let bs = if use_size_curve { eval_curve(&p.size_curve, 0.0).max(1.0) } else { p.brush_size };
+    let engine = PaintEngine::new(&target, &boundary, color_tol, &theta, &coh, &dens);
+
+    // 密度 → ストローク長倍率。length_curve があればそれ、無ければ一律 brush_length
+    let len_of = |d: f32| -> f32 {
+        if p.length_curve.is_empty() {
+            p.brush_length
+        } else {
+            eval_curve(&p.length_curve, d).max(0.1)
+        }
+    };
 
     let tag_of = |d: f32| {
         if d > hard_t {
@@ -386,17 +468,26 @@ pub fn run_pipeline(
         &|_d| Tag::Soft,
         None,
         0.15,
+        &len_of,
     );
 
-    // 主層: 密度 → サイズ / ハード・スタンダード・ソフトの 3 段階
+    // 主層: 密度 → サイズ / ハード・スタンダード・ソフトの 3 段階。
+    // size_curve があれば密度→半径をカーブで、無ければ従来マッピング
     let main = engine.make_strokes(
         &mut rng,
         bs * 0.6 / p.strokes_scale,
-        &mut |d, _r| density::brush_size_at(d, bs * 0.35, bs * 0.9),
+        &mut |d, _r| {
+            if use_size_curve {
+                eval_curve(&p.size_curve, d).max(0.5)
+            } else {
+                density::brush_size_at(d, bs * 0.35, bs * 0.9)
+            }
+        },
         &style_of,
         &tag_of,
         None,
         p.side_sample_prob,
+        &len_of,
     );
 
     // ディテール層: 高密度領域にだけ小さいハードブラシを足す
@@ -410,6 +501,7 @@ pub fn run_pipeline(
         &|_d| Tag::Hard,
         Some(&detail_mask),
         0.15,
+        &len_of,
     );
 
     let total = under.len() + main.len() + detail.len();
@@ -690,4 +782,71 @@ fn overview(stages: &[(String, RgbImage)]) -> RgbImage {
         image::imageops::overlay(&mut sheet, t, x as i64, y as i64);
     }
     sheet
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::brushes::Brushes;
+
+    #[test]
+    fn eval_curve_interpolates_and_clamps() {
+        let pts = [[0.0, 10.0], [0.5, 4.0], [1.0, 2.0]];
+        assert_eq!(eval_curve(&pts, -1.0), 10.0); // 範囲外は端でクランプ
+        assert_eq!(eval_curve(&pts, 0.0), 10.0);
+        assert_eq!(eval_curve(&pts, 0.5), 4.0);
+        assert!((eval_curve(&pts, 0.25) - 7.0).abs() < 1e-4); // 線形補間
+        assert_eq!(eval_curve(&pts, 2.0), 2.0);
+        assert_eq!(eval_curve(&[], 0.5), 0.0); // 空
+        assert_eq!(eval_curve(&[[0.3, 5.0]], 0.9), 5.0); // 1 点は定数
+    }
+
+    fn sample_image() -> RgbImage {
+        // 色境界を持つ 96x96 のテスト画像（4 象限で色違い）
+        let mut img = RgbImage::new(96, 96);
+        for (x, y, px) in img.enumerate_pixels_mut() {
+            px.0 = match (x < 48, y < 48) {
+                (true, true) => [200, 60, 40],
+                (false, true) => [40, 120, 200],
+                (true, false) => [60, 180, 90],
+                (false, false) => [230, 210, 80],
+            };
+        }
+        img
+    }
+
+    fn paint_bytes(params: &Params) -> Vec<u8> {
+        let img = sample_image();
+        let mut brushes = Brushes::new();
+        let res = run_pipeline(&img, None, params, &mut brushes, Callbacks::default(), false)
+            .expect("pipeline");
+        res.final_image.into_raw()
+    }
+
+    #[test]
+    fn size_curve_changes_output() {
+        let mut small = Params::default();
+        small.size_curve = vec![[0.0, 3.0], [1.0, 3.0]]; // 全域で細いブラシ
+        let mut large = Params::default();
+        large.size_curve = vec![[0.0, 30.0], [1.0, 30.0]]; // 全域で太いブラシ
+        assert_ne!(paint_bytes(&small), paint_bytes(&large));
+    }
+
+    #[test]
+    fn length_curve_changes_output() {
+        let mut short = Params::default();
+        short.length_curve = vec![[0.0, 1.0], [1.0, 1.0]]; // 点描風の短いタッチ
+        let mut long = Params::default();
+        long.length_curve = vec![[0.0, 9.0], [1.0, 9.0]]; // 長く流れるタッチ
+        assert_ne!(paint_bytes(&short), paint_bytes(&long));
+    }
+
+    #[test]
+    fn color_fidelity_changes_output() {
+        let mut lo = Params::default();
+        lo.color_fidelity = 0.0;
+        let mut hi = Params::default();
+        hi.color_fidelity = 1.0;
+        assert_ne!(paint_bytes(&lo), paint_bytes(&hi));
+    }
 }

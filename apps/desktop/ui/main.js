@@ -36,8 +36,8 @@ let replayTimer = null;
 let finalDataUrl = null;
 
 const SLIDERS = [
-  "pixels", "resolution", "palette", "posterize_blur", "normal_blur",
-  "brush_size", "strokes_scale", "wet", "saturation", "depth_detail", "out_long",
+  "color_fidelity", "pixels", "resolution", "palette", "posterize_blur", "normal_blur",
+  "strokes_scale", "wet", "saturation", "depth_detail", "out_long",
   "focus_range", "detail_min", "detail_max", "line_strength", "line_width",
   "paper_texture", "paper_border", "pigment", "edge_darken",
   "focus_depth", "hard_quantile", "standard_quantile", "side_sample_prob",
@@ -57,7 +57,7 @@ const PARAM_HELP = {
   palette: "減色後の色数",
   posterize_blur: "減色前のぼかし。大きいと色面が滑らかに繋がる",
   normal_blur: "方向場の平滑さ。大きいとストロークが大きくうねる",
-  brush_size: "基準ブラシ半径（キャンバス px）",
+  color_fidelity: "色の境を元絵にどれだけ忠実にするか。高いほど元画像の色境界でストロークが止まり、塗り色も元絵に寄る",
   strokes_scale: "ストローク本数の倍率",
   wet: "筆を置くとき下の色と混ざる比率（ウェットブレンディング）",
   saturation: "彩度の倍率",
@@ -91,7 +91,7 @@ for (const name of SLIDERS) {
   const decimals = Number.isInteger(parseFloat(input.step)) ? 0
     : (String(input.step).split(".")[1] || "").length;
 
-  // ラベル行を「名前 | 数値入力 | 単位 | 走査」の 1 行 flex に組み直す
+  // ラベル行を「名前 | 数値入力 | 単位」の 1 行 flex に組み直す
   const head = document.createElement("div");
   head.className = "param-head";
   const pname = document.createElement("span");
@@ -166,23 +166,151 @@ for (const name of SLIDERS) {
     input.value = DEFAULTS[name];
     input.dispatchEvent(new Event("input"));
   });
-
-  // 走査ボタン: このパラメータだけを段階的に変えた比較レンダリング
-  const btn = document.createElement("button");
-  btn.className = "sweep-btn";
-  btn.textContent = "走査";
-  btn.title = "このパラメータを 6 段階に変えて比較";
-  btn.addEventListener("click", (e) => {
-    e.preventDefault();
-    startSweep(name);
-  });
-  head.appendChild(btn);
 }
 
 // セレクト・チェックボックス・シードの変更も自動プレビュー対象
 for (const id of ["p-hard_brush", "p-standard_brush", "p-soft_brush", "p-color_space", "p-depth_invert", "p-seed", "p-process_gif"]) {
   $(id).addEventListener("change", () => scheduleAutoPreview());
 }
+
+// --- 密度カーブエディタ（太さ・長さ）---
+// 横軸 = 密度 0..1（左：平坦な面 → 右：輪郭・細部）、縦軸 = 値。
+// 制御点をドラッグで調整、空白クリックで追加、点をダブルクリックで削除。
+function createCurveEditor(canvas, opts) {
+  const { yMin, yMax, defaultPoints, valEl, unit, decimals, onChange } = opts;
+  const ctx = canvas.getContext("2d");
+  const PAD = { l: 8, r: 8, t: 10, b: 15 };
+  let points = defaultPoints.map((p) => p.slice());
+  let dragIndex = -1;
+  const dpr = () => window.devicePixelRatio || 1;
+  const plotW = () => canvas.clientWidth - PAD.l - PAD.r;
+  const plotH = () => canvas.clientHeight - PAD.t - PAD.b;
+
+  function fit() {
+    canvas.width = Math.round((canvas.clientWidth || 240) * dpr());
+    canvas.height = Math.round((canvas.clientHeight || 96) * dpr());
+    draw();
+  }
+  const toPx = (pt) => ({
+    x: PAD.l + pt[0] * plotW(),
+    y: PAD.t + (1 - (pt[1] - yMin) / (yMax - yMin)) * plotH(),
+  });
+  const fromPx = (mx, my) => [
+    Math.min(1, Math.max(0, (mx - PAD.l) / plotW())),
+    Math.min(yMax, Math.max(yMin, yMin + (1 - (my - PAD.t) / plotH()) * (yMax - yMin))),
+  ];
+  function draw() {
+    const c = ctx;
+    c.setTransform(dpr(), 0, 0, dpr(), 0, 0);
+    const W = canvas.clientWidth, H = canvas.clientHeight;
+    c.clearRect(0, 0, W, H);
+    c.strokeStyle = "#2c2e34"; c.lineWidth = 1;
+    c.strokeRect(PAD.l, PAD.t, plotW(), plotH());
+    c.beginPath();
+    for (let i = 1; i < 4; i++) {
+      const gx = PAD.l + (plotW() * i) / 4;
+      c.moveTo(gx, PAD.t); c.lineTo(gx, PAD.t + plotH());
+    }
+    c.strokeStyle = "#26282d"; c.stroke();
+    c.beginPath();
+    points.forEach((pt, i) => {
+      const p = toPx(pt);
+      if (i === 0) c.moveTo(p.x, p.y); else c.lineTo(p.x, p.y);
+    });
+    c.strokeStyle = "#6aa9e0"; c.lineWidth = 2; c.stroke();
+    points.forEach((pt, i) => {
+      const p = toPx(pt);
+      c.beginPath(); c.arc(p.x, p.y, i === dragIndex ? 5 : 4, 0, Math.PI * 2);
+      c.fillStyle = i === dragIndex ? "#cfe6ff" : "#9fc4ea"; c.fill();
+    });
+    c.fillStyle = "#6b6f78"; c.font = "10px sans-serif";
+    c.fillText("疎", PAD.l + 1, H - 4);
+    c.fillText("密", W - PAD.r - 12, H - 4);
+  }
+  const pos = (e) => {
+    const r = canvas.getBoundingClientRect();
+    return [e.clientX - r.left, e.clientY - r.top];
+  };
+  function nearest(mx, my) {
+    let best = -1, bd = 12;
+    points.forEach((pt, i) => {
+      const p = toPx(pt);
+      const dd = Math.hypot(p.x - mx, p.y - my);
+      if (dd < bd) { bd = dd; best = i; }
+    });
+    return best;
+  }
+  const showVal = (pt) => {
+    if (valEl) valEl.textContent = `密度 ${pt[0].toFixed(2)} → ${pt[1].toFixed(decimals)}${unit}`;
+  };
+  canvas.addEventListener("pointerdown", (e) => {
+    const [mx, my] = pos(e);
+    let i = nearest(mx, my);
+    if (i < 0) {
+      const np = fromPx(mx, my);
+      points.push(np);
+      points.sort((a, b) => a[0] - b[0]);
+      i = points.indexOf(np);
+    }
+    dragIndex = i;
+    canvas.setPointerCapture(e.pointerId);
+    showVal(points[i]);
+    draw();
+  });
+  canvas.addEventListener("pointermove", (e) => {
+    if (dragIndex < 0) return;
+    const np = fromPx(...pos(e));
+    if (dragIndex === 0 || dragIndex === points.length - 1) {
+      points[dragIndex][1] = np[1]; // 端点は Y のみ移動
+    } else {
+      const lo = points[dragIndex - 1][0] + 0.001;
+      const hi = points[dragIndex + 1][0] - 0.001;
+      points[dragIndex][0] = Math.min(hi, Math.max(lo, np[0]));
+      points[dragIndex][1] = np[1];
+    }
+    showVal(points[dragIndex]);
+    draw();
+  });
+  const endDrag = () => {
+    if (dragIndex >= 0) { dragIndex = -1; draw(); onChange && onChange(); }
+  };
+  canvas.addEventListener("pointerup", endDrag);
+  canvas.addEventListener("pointercancel", endDrag);
+  canvas.addEventListener("dblclick", (e) => {
+    const i = nearest(...pos(e));
+    if (i > 0 && i < points.length - 1) {
+      points.splice(i, 1);
+      draw();
+      onChange && onChange();
+    }
+  });
+  window.addEventListener("resize", fit);
+  requestAnimationFrame(fit);
+  return {
+    get points() { return points.map((p) => p.slice()); },
+    set(pts) {
+      if (Array.isArray(pts) && pts.length >= 2) {
+        points = pts.map((p) => [p[0], p[1]]);
+        draw();
+      }
+    },
+    reset() { points = defaultPoints.map((p) => p.slice()); draw(); },
+    refresh: fit,
+  };
+}
+
+const sizeCurve = createCurveEditor($("curve-size"), {
+  yMin: 1, yMax: 40,
+  defaultPoints: [[0, 13.5], [0.5, 8.4], [1, 5.25]],
+  valEl: $("curve-size-val"), unit: "px", decimals: 0,
+  onChange: scheduleAutoPreview,
+});
+const lengthCurve = createCurveEditor($("curve-length"), {
+  yMin: 1, yMax: 10,
+  defaultPoints: [[0, 3], [1, 3]],
+  valEl: $("curve-length-val"), unit: "×", decimals: 1,
+  onChange: scheduleAutoPreview,
+});
 
 // カスタムブラシ:「PNG を選択…」を選ぶとファイルダイアログを開き、
 // パスを value に持つ option を追加して選択状態にする
@@ -288,7 +416,13 @@ function collectParams() {
     color_space: $("p-color_space").value,
     posterize_blur: num("posterize_blur"),
     normal_blur: num("normal_blur"),
-    brush_size: num("brush_size"),
+    color_fidelity: num("color_fidelity"),
+    // 太さ・長さは密度カーブで指定する。brush_size/brush_length は
+    // カーブが非空のときコア側で無視されるが、DTO を満たすため送っておく
+    brush_size: 15,
+    brush_length: 3,
+    size_curve: sizeCurve.points,
+    length_curve: lengthCurve.points,
     hard_brush: $("p-hard_brush").value,
     standard_brush: $("p-standard_brush").value,
     soft_brush: $("p-soft_brush").value,
@@ -386,7 +520,7 @@ $("btn-open").addEventListener("click", async () => {
 });
 
 async function doRender() {
-  if (!imagePath || rendering || sweeping) return;
+  if (!imagePath || rendering) return;
   rendering = true;
   stopReplay();
   processFrames = [];
@@ -414,7 +548,7 @@ function scheduleAutoPreview() {
   autoDirty = true;
   clearTimeout(autoTimer);
   autoTimer = setTimeout(() => {
-    if (rendering || sweeping) return; // 完了時に autoDirty を見て再実行される
+    if (rendering) return; // 完了時に autoDirty を見て再実行される
     autoDirty = false;
     doRender();
   }, 700);
@@ -436,6 +570,8 @@ $("btn-reset").addEventListener("click", () => {
       input.value = DEFAULTS[name];
       input.dispatchEvent(new Event("input"));
     }
+    sizeCurve.reset();
+    lengthCurve.reset();
   }
   setStatus("既定値に戻しました");
 });
@@ -531,95 +667,6 @@ preview.addEventListener("click", (e) => {
 
 preview.addEventListener("dblclick", clearFocus);
 
-// --- パラメータ走査（スイープ） ---
-const sweepPanel = $("sweep-panel");
-const sweepGrid = $("sweep-grid");
-const sweepTitle = $("sweep-title");
-let sweeping = false;
-let sweepParamName = null;
-
-// スライダー名 → サイドバーの表示名（ボタンの親ラベルから取得）
-function sliderLabelText(name) {
-  const label = $(`p-${name}`).parentElement;
-  return label.childNodes[0].textContent.trim();
-}
-
-async function startSweep(name) {
-  if (!imagePath) {
-    setStatus("先に画像を開いてください");
-    return;
-  }
-  if (rendering || sweeping) return;
-  const input = $(`p-${name}`);
-  const min = parseFloat(input.min);
-  const max = parseFloat(input.max);
-  const step = parseFloat(input.step) || 1;
-  const n = 6;
-  const values = [];
-  for (let i = 0; i < n; i++) {
-    let v = min + ((max - min) * i) / (n - 1);
-    v = Math.round(v / step) * step;
-    v = parseFloat(v.toFixed(4));
-    if (!values.includes(v)) values.push(v);
-  }
-
-  sweeping = true;
-  sweepParamName = name;
-  sweepTitle.textContent = `走査: ${sliderLabelText(name)}（クリックで採用）`;
-  sweepGrid.innerHTML = "";
-  for (const v of values) {
-    const cell = document.createElement("div");
-    cell.className = "sweep-cell pending";
-    cell.textContent = `${v} …`;
-    sweepGrid.appendChild(cell);
-  }
-  sweepPanel.hidden = false;
-  $("btn-render").disabled = true;
-  setStatus(`走査中: ${sliderLabelText(name)}`);
-  try {
-    await invoke("start_sweep", {
-      path: imagePath,
-      params: collectParams(),
-      sweepParam: name,
-      values,
-    });
-  } catch (e) {
-    sweeping = false;
-    sweepPanel.hidden = true;
-    $("btn-render").disabled = false;
-    setStatus(`走査を開始できません: ${e}`);
-  }
-}
-
-listen("sweep_result", ({ payload }) => {
-  const cell = sweepGrid.children[payload.index];
-  if (!cell) return;
-  cell.className = "sweep-cell";
-  cell.innerHTML = "";
-  const img = document.createElement("img");
-  img.src = payload.data_url;
-  const cap = document.createElement("div");
-  cap.textContent = String(payload.value);
-  cell.append(img, cap);
-  cell.addEventListener("click", () => {
-    const input = $(`p-${sweepParamName}`);
-    input.value = payload.value;
-    input.dispatchEvent(new Event("input"));
-    sweepPanel.hidden = true;
-    setStatus(`${sliderLabelText(sweepParamName)} = ${payload.value} を採用（レンダリングで確認）`);
-  });
-});
-
-listen("sweep_done", () => {
-  sweeping = false;
-  $("btn-render").disabled = !imagePath;
-  if (!sweepPanel.hidden) setStatus("走査完了。サムネイルをクリックで値を採用");
-});
-
-$("sweep-close").addEventListener("click", () => {
-  sweepPanel.hidden = true;
-});
-
 // --- プリセット ---
 const presetSelect = $("preset-select");
 let presets = [];
@@ -657,6 +704,9 @@ function applyParams(params) {
   }
   $("p-depth_invert").checked = !!params.depth_invert;
   $("p-seed").value = params.seed ?? 42;
+  // 密度カーブ（プリセットはバックエンドで brush_size/length から生成して送ってくる）
+  if (params.size_curve && params.size_curve.length >= 2) sizeCurve.set(params.size_curve);
+  if (params.length_curve && params.length_curve.length >= 2) lengthCurve.set(params.length_curve);
 }
 
 loadPresets();

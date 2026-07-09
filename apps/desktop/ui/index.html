@@ -26,23 +26,14 @@
 
     <details class="group" open>
       <summary>基本</summary>
-      <label>採色解像度 <span id="v-pixels">96</span>px
-        <input type="range" id="p-pixels" min="32" max="256" step="8" value="96" />
-      </label>
-      <label>キャンバス解像度 <span id="v-resolution">360</span>px
-        <input type="range" id="p-resolution" min="120" max="720" step="20" value="360" />
+      <label>元絵への忠実度 <span id="v-color_fidelity">0.50</span>
+        <input type="range" id="p-color_fidelity" min="0" max="1" step="0.05" value="0.5" />
       </label>
       <label>減色数 <span id="v-palette">36</span>
         <input type="range" id="p-palette" min="8" max="96" step="2" value="36" />
       </label>
-      <label>減色前ぼかし σ <span id="v-posterize_blur">2.0</span>
-        <input type="range" id="p-posterize_blur" min="0" max="6" step="0.5" value="2" />
-      </label>
-      <label>勾配ぼかし σ <span id="v-normal_blur">8.0</span>
-        <input type="range" id="p-normal_blur" min="1" max="20" step="0.5" value="8" />
-      </label>
-      <label>ブラシ半径 <span id="v-brush_size">15</span>px
-        <input type="range" id="p-brush_size" min="4" max="40" step="1" value="15" />
+      <label>キャンバス解像度 <span id="v-resolution">360</span>px
+        <input type="range" id="p-resolution" min="120" max="720" step="20" value="360" />
       </label>
       <label>ストローク密度 <span id="v-strokes_scale">1.0</span>×
         <input type="range" id="p-strokes_scale" min="0.5" max="2" step="0.1" value="1" />
@@ -53,12 +44,40 @@
       <label>彩度 <span id="v-saturation">1.15</span>×
         <input type="range" id="p-saturation" min="0.8" max="1.6" step="0.05" value="1.15" />
       </label>
-      <label>出力長辺 <span id="v-out_long">1080</span>px
-        <input type="range" id="p-out_long" min="480" max="2160" step="40" value="1080" />
-      </label>
     </details>
 
     <details class="group" open>
+      <summary>ブラシ（密度カーブ）</summary>
+      <p class="curve-note">横軸 = 密度（左：平坦な面 → 右：輪郭・細部）。点をドラッグで調整、空白クリックで点を追加、点をダブルクリックで削除。</p>
+      <div class="curve-block">
+        <div class="curve-cap"><span>太さ</span><span id="curve-size-val" class="curve-val"></span></div>
+        <canvas id="curve-size" class="curve"></canvas>
+      </div>
+      <div class="curve-block">
+        <div class="curve-cap"><span>長さ</span><span id="curve-length-val" class="curve-val"></span></div>
+        <canvas id="curve-length" class="curve"></canvas>
+      </div>
+      <label class="row">ハードブラシ（輪郭・高密度）
+        <select id="p-hard_brush">
+          <option selected>triangle</option><option>flat</option><option>soft</option>
+          <option>oil</option><option>pastel</option><option>charcoal</option><option>wash</option><option>bleed</option><option>drybrush</option><option>pencil</option><option>impasto</option><option value="__custom__">PNG を選択…</option>
+        </select>
+      </label>
+      <label class="row">スタンダード（中密度）
+        <select id="p-standard_brush">
+          <option>triangle</option><option selected>flat</option><option>soft</option>
+          <option>oil</option><option>pastel</option><option>charcoal</option><option>wash</option><option>bleed</option><option>drybrush</option><option>pencil</option><option>impasto</option><option value="__custom__">PNG を選択…</option>
+        </select>
+      </label>
+      <label class="row">ソフトブラシ（広い面）
+        <select id="p-soft_brush">
+          <option>triangle</option><option>flat</option><option selected>soft</option>
+          <option>oil</option><option>pastel</option><option>charcoal</option><option>wash</option><option>bleed</option><option>drybrush</option><option>pencil</option><option>impasto</option><option value="__custom__">PNG を選択…</option>
+        </select>
+      </label>
+    </details>
+
+    <details class="group">
       <summary>奥行き / フォーカス <span id="focus-state">（プレビューをクリックで焦点指定）</span></summary>
       <label>奥行きディテール <span id="v-depth_detail">0.50</span>
         <input type="range" id="p-depth_detail" min="0" max="1" step="0.05" value="0.5" />
@@ -89,7 +108,7 @@
       <div id="depth-model-state" class="hint"></div>
     </details>
 
-    <details class="group" open>
+    <details class="group">
       <summary>線 / 紙 / 水彩</summary>
       <label>輪郭線の濃さ <span id="v-line_strength">0.40</span>
         <input type="range" id="p-line_strength" min="0" max="1" step="0.05" value="0.4" />
@@ -112,35 +131,19 @@
     </details>
 
     <details class="group">
-      <summary>ブラシ / 色空間 / シード</summary>
-      <label class="row">ハードブラシ
-        <select id="p-hard_brush">
-          <option selected>triangle</option><option>flat</option><option>soft</option>
-          <option>oil</option><option>pastel</option><option>charcoal</option><option>wash</option><option>bleed</option><option>drybrush</option><option>pencil</option><option>impasto</option><option value="__custom__">PNG を選択…</option>
-        </select>
+      <summary>詳細</summary>
+      <label>採色解像度 <span id="v-pixels">96</span>px
+        <input type="range" id="p-pixels" min="32" max="256" step="8" value="96" />
       </label>
-      <label class="row">スタンダード
-        <select id="p-standard_brush">
-          <option>triangle</option><option selected>flat</option><option>soft</option>
-          <option>oil</option><option>pastel</option><option>charcoal</option><option>wash</option><option>bleed</option><option>drybrush</option><option>pencil</option><option>impasto</option><option value="__custom__">PNG を選択…</option>
-        </select>
+      <label>減色前ぼかし σ <span id="v-posterize_blur">2.0</span>
+        <input type="range" id="p-posterize_blur" min="0" max="6" step="0.5" value="2" />
       </label>
-      <label class="row">ソフトブラシ
-        <select id="p-soft_brush">
-          <option>triangle</option><option>flat</option><option selected>soft</option>
-          <option>oil</option><option>pastel</option><option>charcoal</option><option>wash</option><option>bleed</option><option>drybrush</option><option>pencil</option><option>impasto</option><option value="__custom__">PNG を選択…</option>
-        </select>
+      <label>勾配ぼかし σ <span id="v-normal_blur">8.0</span>
+        <input type="range" id="p-normal_blur" min="1" max="20" step="0.5" value="8" />
       </label>
-      <label class="row">色空間
-        <select id="p-color_space"><option selected>rgb</option><option>lab</option></select>
+      <label>出力長辺 <span id="v-out_long">1080</span>px
+        <input type="range" id="p-out_long" min="480" max="2160" step="40" value="1080" />
       </label>
-      <label class="row">シード
-        <input type="number" id="p-seed" value="42" min="0" step="1" />
-      </label>
-    </details>
-
-    <details class="group">
-      <summary>上級</summary>
       <label>ハード刷り分け分位数 <span id="v-hard_quantile">0.85</span>
         <input type="range" id="p-hard_quantile" min="0.5" max="0.99" step="0.01" value="0.85" />
       </label>
@@ -149,6 +152,12 @@
       </label>
       <label>横取り採色率 <span id="v-side_sample_prob">0.30</span>
         <input type="range" id="p-side_sample_prob" min="0" max="1" step="0.05" value="0.3" />
+      </label>
+      <label class="row">色空間
+        <select id="p-color_space"><option selected>rgb</option><option>lab</option></select>
+      </label>
+      <label class="row">シード
+        <input type="number" id="p-seed" value="42" min="0" step="1" />
       </label>
       <label class="row" title="一筆ごとの描画過程を GIF に書き出します（レンダリングが少し遅くなります）">過程 GIF を生成
         <input type="checkbox" id="p-process_gif" />
@@ -170,13 +179,6 @@
       <img id="preview" alt="" />
       <div id="focus-marker"></div>
       <div id="drop-hint">ここに画像をドロップ</div>
-      <div id="sweep-panel" hidden>
-        <div id="sweep-header">
-          <span id="sweep-title"></span>
-          <button id="sweep-close">閉じる</button>
-        </div>
-        <div id="sweep-grid"></div>
-      </div>
     </div>
     <div id="stages"></div>
   </main>

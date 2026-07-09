@@ -35,6 +35,12 @@ pub enum Tag {
 
 pub struct PaintEngine<'a> {
     pub target: &'a Rgb32, // 0..1 の減色ターゲット（描画解像度）
+    /// ストローク停止判定に使う「元画像の色」（減色前・描画解像度）。
+    /// 減色済み target ではなく元画像の色境界でストロークを止めることで、
+    /// 色の境目が元絵に忠実になる
+    pub boundary: &'a Rgb32,
+    /// 色境界とみなす色差のしきい値（小さいほど元絵の細かい境界で止まる）
+    pub color_tol: f32,
     pub theta: &'a Gray,
     pub coherence: &'a Gray,
     pub density: &'a Gray,
@@ -43,8 +49,15 @@ pub struct PaintEngine<'a> {
 }
 
 impl<'a> PaintEngine<'a> {
-    pub fn new(target: &'a Rgb32, theta: &'a Gray, coherence: &'a Gray, density: &'a Gray) -> Self {
-        PaintEngine { target, theta, coherence, density, w: target.w, h: target.h }
+    pub fn new(
+        target: &'a Rgb32,
+        boundary: &'a Rgb32,
+        color_tol: f32,
+        theta: &'a Gray,
+        coherence: &'a Gray,
+        density: &'a Gray,
+    ) -> Self {
+        PaintEngine { target, boundary, color_tol, theta, coherence, density, w: target.w, h: target.h }
     }
 
     #[inline]
@@ -56,10 +69,12 @@ impl<'a> PaintEngine<'a> {
     /// 種点から方向場に沿って両方向に折れ線を伸ばす。方向場は π 周期なので、
     /// 毎ステップ前回と同じ側に向きを揃えないとストロークが折り返してしまう。
     /// ターゲット色の急変（≈ ポスタライズ境界越え）か画面外で停止。
-    pub fn trace(&self, x0: f32, y0: f32, radius: f32, color: [f32; 3], max_len_factor: f32) -> Vec<(f32, f32)> {
-        const COLOR_TOL: f32 = 0.10;
+    pub fn trace(&self, x0: f32, y0: f32, radius: f32, max_len_factor: f32) -> Vec<(f32, f32)> {
         let step = (radius * 0.4).max(1.5);
         let max_steps = ((radius * max_len_factor / step) as usize).max(2);
+        // 停止判定は元画像（boundary）の種点の色を基準にする。減色後ではなく
+        // 元絵の色境界でストロークが止まるので、色の境が元絵に忠実になる
+        let seed = self.boundary.at(x0 as usize, y0 as usize);
         let mut pts = vec![(x0, y0)];
         for direction in [1.0f32, -1.0] {
             let (mut cx, mut cy) = (x0, y0);
@@ -77,12 +92,12 @@ impl<'a> PaintEngine<'a> {
                 if cx < 0.0 || cx >= self.w as f32 || cy < 0.0 || cy >= self.h as f32 {
                     break;
                 }
-                let t = self.target.at(cx as usize, cy as usize);
-                let dc = ((t[0] - color[0]).powi(2)
-                    + (t[1] - color[1]).powi(2)
-                    + (t[2] - color[2]).powi(2))
+                let t = self.boundary.at(cx as usize, cy as usize);
+                let dc = ((t[0] - seed[0]).powi(2)
+                    + (t[1] - seed[1]).powi(2)
+                    + (t[2] - seed[2]).powi(2))
                 .sqrt();
-                if dc > COLOR_TOL {
+                if dc > self.color_tol {
                     break;
                 }
                 if direction > 0.0 {
@@ -110,9 +125,9 @@ impl<'a> PaintEngine<'a> {
         tag_of: &dyn Fn(f32) -> Tag,
         mask: Option<&[bool]>,
         side_sample_prob: f32,
+        len_of: &dyn Fn(f32) -> f32,
     ) -> Vec<Stroke> {
         const JITTER: f32 = 0.5;
-        const MAX_LEN_FACTOR: f32 = 3.0;
         let mut strokes = Vec::new();
         // 種はキャンバスの外周半グリッド分まで撒く——端のストロークが
         // 画面外から被さることで、縁に下塗りが露出する「額縁状のムラ」を防ぐ
@@ -150,7 +165,7 @@ impl<'a> PaintEngine<'a> {
                     ];
                 }
 
-                let pts = self.trace(xi as f32, yi as f32, radius, base_color, MAX_LEN_FACTOR);
+                let pts = self.trace(xi as f32, yi as f32, radius, len_of(d));
                 let tag = tag_of(d);
                 // ハードブラシは輪郭を「噛ませる」ため不透明度を高く、
                 // ソフトブラシは重ね塗りしやすいよう低めに

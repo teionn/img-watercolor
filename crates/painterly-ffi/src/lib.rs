@@ -46,6 +46,12 @@ pub struct RenderParams {
     /// 基準ブラシ半径（キャンバス px）
     #[uniffi(default = 15.0)]
     pub brush_size: f32,
+    /// ストローク長の上限（半径の倍数）。低いと点描風、高いと流れる長いタッチ
+    #[uniffi(default = 3.0)]
+    pub brush_length: f32,
+    /// 色の境を元絵に忠実にする度合い 0..1（高いほど元画像の色境界で止まり色も元絵寄り）
+    #[uniffi(default = 0.5)]
+    pub color_fidelity: f32,
     /// 輪郭・高密度領域用ブラシ（triangle/flat/soft/oil/pastel/charcoal）
     #[uniffi(default = "triangle")]
     pub hard_brush: String,
@@ -121,6 +127,8 @@ impl Default for RenderParams {
             posterize_blur: p.posterize_blur,
             normal_blur: p.normal_blur,
             brush_size: p.brush_size,
+            brush_length: p.brush_length,
+            color_fidelity: p.color_fidelity,
             hard_brush: p.hard_brush,
             standard_brush: p.standard_brush,
             soft_brush: p.soft_brush,
@@ -157,6 +165,8 @@ impl From<RenderParams> for Params {
             posterize_blur: d.posterize_blur,
             normal_blur: d.normal_blur,
             brush_size: d.brush_size,
+            brush_length: d.brush_length,
+            color_fidelity: d.color_fidelity,
             hard_brush: d.hard_brush,
             standard_brush: d.standard_brush,
             soft_brush: d.soft_brush,
@@ -262,6 +272,8 @@ pub fn presets() -> Vec<PresetInfo> {
                     posterize_blur: d.posterize_blur,
                     normal_blur: d.normal_blur,
                     brush_size: d.brush_size,
+                    brush_length: d.brush_length,
+                    color_fidelity: d.color_fidelity,
                     hard_brush: d.hard_brush.clone(),
                     standard_brush: d.standard_brush.clone(),
                     soft_brush: d.soft_brush.clone(),
