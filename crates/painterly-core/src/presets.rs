@@ -32,6 +32,26 @@ pub fn presets() -> Vec<Preset> {
                 paper_border: 0.05,
                 line_strength: 0.25,
                 brush_size: 17.0,
+                // 水彩専用ブラシ: 大きな面は wash、置き染みは bleed、
+                // 細部はかすれ筆でドライブラシの質感
+                hard_brush: "drybrush".into(),
+                standard_brush: "bleed".into(),
+                soft_brush: "wash".into(),
+                ..base()
+            },
+        },
+        Preset {
+            name: "厚塗り",
+            description: "深い剛毛の溝と絵具の塊。インパスト油彩",
+            params: Params {
+                brush_size: 16.0,
+                wet: 0.22,
+                saturation: 1.2,
+                paper_texture: 0.2,
+                line_strength: 0.2,
+                hard_brush: "triangle".into(),
+                standard_brush: "impasto".into(),
+                soft_brush: "oil".into(),
                 ..base()
             },
         },
@@ -54,6 +74,9 @@ pub fn presets() -> Vec<Preset> {
                 detail_min: 0.3,
                 line_strength: 0.25,
                 paper_texture: 0.55,
+                hard_brush: "bleed".into(),
+                standard_brush: "wash".into(),
+                soft_brush: "wash".into(),
                 ..base()
             },
         },
@@ -77,6 +100,7 @@ pub fn presets() -> Vec<Preset> {
                 resolution: 220,
                 brush_size: 16.0,
                 line_strength: 0.3,
+                hard_brush: "drybrush".into(),
                 ..base()
             },
         },
@@ -91,6 +115,9 @@ pub fn presets() -> Vec<Preset> {
                 line_width: 1.4,
                 paper_texture: 0.65,
                 detail_min: 0.4,
+                hard_brush: "pencil".into(),
+                standard_brush: "pencil".into(),
+                soft_brush: "pastel".into(),
                 ..base()
             },
         },

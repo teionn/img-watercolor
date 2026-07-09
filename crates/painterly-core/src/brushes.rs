@@ -11,7 +11,16 @@ use crate::buf::{gaussian_blur, resize_gray_area, Gray};
 use crate::rng::Rng64;
 
 pub const ANGLE_BINS: usize = 24;
-pub const BUILTIN_BRUSHES: [&str; 6] = ["triangle", "flat", "soft", "oil", "pastel", "charcoal"];
+pub const BUILTIN_BRUSHES: [&str; 11] = [
+    // 油彩・汎用
+    "triangle", "flat", "soft", "oil", "pastel", "charcoal",
+    // 塗りのスタイル別（プリセットが使い分ける）
+    "wash",     // 水彩の平塗り
+    "bleed",    // 水彩のにじみ
+    "drybrush", // かすれ筆（ドライブラシ）
+    "pencil",   // 鉛筆の芯
+    "impasto",  // 油彩の厚塗り
+];
 
 const TEX_SIZE: usize = 96;
 
@@ -151,6 +160,83 @@ impl Brushes {
                         let body = (1.0 - smoothstep(0.35, 1.0, v.abs()))
                             * (1.0 - smoothstep(0.25, 1.0, u.abs()));
                         a.set(x, y, body * (0.55 + 0.45 * bristle.at(0, y)));
+                    }
+                }
+            }
+            "wash" => {
+                // 水彩の平塗り: 輪郭が緩く歪んだ水たまり。内部は低周波のむら、
+                // 縁はわずかに濃い（edge_darken と相乗して顔料溜まりになる）
+                let warp = self.noise(s, s, 6.0, "wash_warp");
+                let mottle = self.noise(s, s, 4.0, "wash_mottle");
+                for y in 0..s {
+                    let v = (y as f32 - c) / half;
+                    for x in 0..s {
+                        let u = (x as f32 - c) / half;
+                        let r = (u * u + v * v).sqrt() + (warp.at(x, y) - 0.5) * 0.30;
+                        let body = 1.0 - smoothstep(0.55, 0.95, r);
+                        let inner = 0.72 + 0.16 * mottle.at(x, y);
+                        let rim = 0.22 * smoothstep(0.30, 0.85, r);
+                        a.set(x, y, body * (inner + rim));
+                    }
+                }
+            }
+            "bleed" => {
+                // 水彩のにじみ: 輪郭が大きく揺らぐ水たまり（wet-in-wet の置き染み）
+                let warp = self.noise(s, s, 4.0, "bleed_warp");
+                let mottle = self.noise(s, s, 3.0, "bleed_mottle");
+                for y in 0..s {
+                    let v = (y as f32 - c) / half;
+                    for x in 0..s {
+                        let u = (x as f32 - c) / half;
+                        let r = (u * u + v * v).sqrt() + (warp.at(x, y) - 0.5) * 0.55;
+                        let body = 1.0 - smoothstep(0.35, 0.85, r);
+                        a.set(x, y, body * (0.60 + 0.40 * mottle.at(x, y)));
+                    }
+                }
+            }
+            "drybrush" => {
+                // かすれ筆: 穂先の束がところどころ抜け、紙の凸だけに絵具が残る
+                let bristle = self.noise(1, s, 0.8, "dry_bristle");
+                let grain = self.noise(s, s, 1.2, "dry_grain");
+                for y in 0..s {
+                    let v = (y as f32 - c) / half;
+                    let streak = smoothstep(0.40, 0.62, bristle.at(0, y));
+                    for x in 0..s {
+                        let u = (x as f32 - c) / half;
+                        let body = (1.0 - smoothstep(0.55, 0.95, v.abs()))
+                            * (1.0 - smoothstep(0.50, 1.0, u.abs()));
+                        a.set(x, y, body * streak * (0.45 + 0.55 * grain.at(x, y)));
+                    }
+                }
+            }
+            "pencil" => {
+                // 鉛筆の芯: 小さめの芯 + 強い紙目（tooth）で粒状に削れる
+                let tooth = self.noise(s, s, 0.7, "pencil_tooth");
+                for y in 0..s {
+                    let v = (y as f32 - c) / half;
+                    for x in 0..s {
+                        let u = (x as f32 - c) / half;
+                        let r = (u * u + v * v).sqrt();
+                        let core = (1.15 - r * 1.5).clamp(0.0, 1.0).powf(0.8);
+                        a.set(x, y, core * smoothstep(0.30, 0.72, tooth.at(x, y)));
+                    }
+                }
+            }
+            "impasto" => {
+                // 厚塗り: 深い剛毛の溝 + 絵具の塊、端は不規則に欠ける
+                let bristle = self.noise(1, s, 1.0, "impasto_bristle");
+                let clump = self.noise(s, s, 2.2, "impasto_clump");
+                let ragged = self.noise(s, s, 3.0, "impasto_edge");
+                for y in 0..s {
+                    let v = (y as f32 - c) / half;
+                    for x in 0..s {
+                        let u = (x as f32 - c) / half;
+                        let body = (1.0
+                            - smoothstep(0.50 - ragged.at(x, y) * 0.25, 0.90, v.abs()))
+                            * (1.0 - smoothstep(0.35, 0.95, u.abs()));
+                        let paint = (0.35 + 0.65 * bristle.at(0, y))
+                            * (0.55 + 0.45 * smoothstep(0.25, 0.60, clump.at(x, y)));
+                        a.set(x, y, body * paint);
                     }
                 }
             }

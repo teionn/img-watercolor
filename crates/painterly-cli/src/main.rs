@@ -26,6 +26,9 @@ struct Args {
     /// プリセット一覧を表示して終了
     #[arg(long, default_value_t = false)]
     list_presets: bool,
+    /// 全ビルトインブラシのスタンプ一覧画像を書き出して終了
+    #[arg(long)]
+    brush_catalog: Option<PathBuf>,
     /// 採色・単純化の解像度（長辺 px）。小さいほど大づかみに [既定: 96]
     #[arg(long)]
     pixels: Option<u32>,
@@ -127,6 +130,37 @@ struct Args {
     out: Option<PathBuf>,
 }
 
+/// 全ビルトインブラシを 1 枚のグリッド画像にする（形状確認・ドキュメント用）
+fn write_brush_catalog(out: &Path) {
+    let mut brushes = Brushes::new();
+    let radius = 44.0;
+    let d = radius as usize * 2 + 1;
+    let pad = 10usize;
+    let cols = 4usize;
+    let rows = BUILTIN_BRUSHES.len().div_ceil(cols);
+    let mut sheet = image::RgbImage::from_pixel(
+        (cols * (d + pad) + pad) as u32,
+        (rows * (d + pad) + pad) as u32,
+        image::Rgb([30, 30, 34]),
+    );
+    for (i, name) in BUILTIN_BRUSHES.iter().enumerate() {
+        let stamp = brushes.get_stamp(name, radius, 0.0);
+        let (r, c) = (i / cols, i % cols);
+        let (ox, oy) = (pad + c * (d + pad), pad + r * (d + pad));
+        for y in 0..d {
+            for x in 0..d {
+                let v = (stamp.at(x, y).clamp(0.0, 1.0) * 255.0) as u8;
+                sheet.put_pixel((ox + x) as u32, (oy + y) as u32, image::Rgb([v, v, v]));
+            }
+        }
+        println!("{:>2}: {}", i + 1, name);
+    }
+    match sheet.save(out) {
+        Ok(()) => println!("-> {}", out.display()),
+        Err(e) => eprintln!("[error] {}: {e}", out.display()),
+    }
+}
+
 fn main() {
     let args = Args::parse();
 
@@ -134,6 +168,11 @@ fn main() {
         for p in painterly_core::presets() {
             println!("{:　<6} {}", p.name, p.description);
         }
+        return;
+    }
+
+    if let Some(out) = &args.brush_catalog {
+        write_brush_catalog(out);
         return;
     }
 
