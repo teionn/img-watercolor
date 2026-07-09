@@ -85,7 +85,8 @@ impl<'a> PaintEngine<'a> {
     /// 毎ステップ前回と同じ側に向きを揃えないとストロークが折り返してしまう。
     /// ターゲット色の急変（≈ ポスタライズ境界越え）か画面外で停止。
     pub fn trace(&self, x0: f32, y0: f32, radius: f32, max_len_factor: f32) -> Vec<(f32, f32)> {
-        let step = (radius * 0.4).max(1.5);
+        // 刻みを細かくして滑らかな軌跡を得る（総延長は max_steps 側で不変）
+        let step = (radius * 0.25).max(1.0);
         let max_steps = ((radius * max_len_factor / step) as usize).max(2);
         // 停止判定は元画像（boundary）の種点の色を基準にする。減色後ではなく
         // 元絵の色境界でストロークが止まるので、色の境が元絵に忠実になる
@@ -261,6 +262,26 @@ pub fn render(
     }
 }
 
+/// Chaikin 法による折れ線の平滑化（角を 1:3 で切り落とす。端点は保持）
+fn smooth_polyline(pts: &[(f32, f32)], iters: usize) -> Vec<(f32, f32)> {
+    let mut p: Vec<(f32, f32)> = pts.to_vec();
+    for _ in 0..iters {
+        if p.len() < 3 {
+            break;
+        }
+        let mut out = Vec::with_capacity(p.len() * 2);
+        out.push(p[0]);
+        for w in p.windows(2) {
+            let (a, b) = (w[0], w[1]);
+            out.push((a.0 * 0.75 + b.0 * 0.25, a.1 * 0.75 + b.1 * 0.25));
+            out.push((a.0 * 0.25 + b.0 * 0.75, a.1 * 0.25 + b.1 * 0.75));
+        }
+        out.push(*p.last().unwrap());
+        p = out;
+    }
+    p
+}
+
 fn draw_stroke(
     canvas: &mut Rgb32,
     st: &Stroke,
@@ -270,14 +291,17 @@ fn draw_stroke(
     grain: Option<&Gray>,
 ) {
     let (w, h) = (canvas.w as isize, canvas.h as isize);
-    let spacing = (st.radius * 0.25).max(1.0);
+    // スタンプの連打に見えないよう間隔を密に取り、連続したリボンにする
+    let spacing = (st.radius * 0.12).max(0.75);
 
-    // 折れ線に沿って等間隔にスタンプ位置をリサンプリング
-    let mut stamp_pts: Vec<(f32, f32)> = vec![st.points[0]];
+    // 折れ線を Chaikin 法で平滑化してから等間隔にリサンプリング。
+    // トレースのカクつきがそのまま筆致に出るのを防ぐ
+    let smoothed = smooth_polyline(&st.points, 2);
+    let mut stamp_pts: Vec<(f32, f32)> = vec![smoothed[0]];
     let mut acc = 0.0f32;
-    for k in 0..st.points.len().saturating_sub(1) {
-        let (mut x0, mut y0) = st.points[k];
-        let (x1, y1) = st.points[k + 1];
+    for k in 0..smoothed.len().saturating_sub(1) {
+        let (mut x0, mut y0) = smoothed[k];
+        let (x1, y1) = smoothed[k + 1];
         let mut seg = (x1 - x0).hypot(y1 - y0);
         while acc + seg >= spacing {
             let t = (spacing - acc) / seg;
@@ -292,10 +316,12 @@ fn draw_stroke(
 
     let n = stamp_pts.len();
     for (j, &(x, y)) in stamp_pts.iter().enumerate() {
-        // スタンプの角度は局所的な走向から
+        // スタンプの角度は前後の点を結んだ接線から（片側差分だと角度が
+        // 段階的に飛んで数珠つなぎに見える）
         let ang = if n > 1 {
-            let k = j.min(n - 2);
-            (stamp_pts[k + 1].1 - stamp_pts[k].1).atan2(stamp_pts[k + 1].0 - stamp_pts[k].0)
+            let k0 = j.saturating_sub(1);
+            let k1 = (j + 1).min(n - 1);
+            (stamp_pts[k1].1 - stamp_pts[k0].1).atan2(stamp_pts[k1].0 - stamp_pts[k0].0)
         } else {
             st.angle0
         };
