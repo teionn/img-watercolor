@@ -40,11 +40,15 @@ const SLIDERS = [
   "brush_size", "strokes_scale", "wet", "saturation", "depth_detail", "out_long",
   "focus_range", "detail_min", "detail_max", "line_strength", "line_width",
   "paper_texture", "paper_border", "pigment", "edge_darken",
+  "focus_depth", "hard_quantile", "standard_quantile", "side_sample_prob",
 ];
 const SELECTS = ["hard_brush", "standard_brush", "soft_brush", "color_space"];
 
 // フォーカス位置（プレビュー上の正規化座標）。クリックで設定、ダブルクリックで解除
 let focusPoint = null;
+// ニューラル深度モデルのロード状態と外部デプス PNG のパス
+let depthModelLoaded = false;
+let externalDepthPath = null;
 
 // 各パラメータの説明（ラベルのツールチップ）
 const PARAM_HELP = {
@@ -63,7 +67,11 @@ const PARAM_HELP = {
   detail_min: "フォーカス範囲外（ボケ側）の粗さ下限",
   detail_max: "焦点付近の細かさ上限（1 超でさらに細密）",
   line_strength: "鉛筆下書き風の輪郭線の濃さ（0 で無効）",
-  line_width: "輪郭線の太さ",
+  line_width: "輪郭線の太さ。1 未満で細線化",
+  focus_depth: "プレビューでクリック指定していないときの焦点深度（0=最前面、1=最奥）",
+  hard_quantile: "密度がこの分位数を超える領域にハードブラシを使う",
+  standard_quantile: "密度がこの分位数を超える領域にスタンダードブラシを使う",
+  side_sample_prob: "隣の色面から色を借りて混ぜるストロークの割合",
   pigment: "透明水彩のグレーズ度（0 = 油彩、1 = 紙の白が透ける水彩）",
   edge_darken: "塗りの縁に顔料が溜まる水彩特有の縁取り",
   paper_texture: "紙目の強さ（水彩時は粒状化も兼ねる）",
@@ -172,9 +180,104 @@ for (const name of SLIDERS) {
 }
 
 // セレクト・チェックボックス・シードの変更も自動プレビュー対象
-for (const id of ["p-hard_brush", "p-standard_brush", "p-soft_brush", "p-color_space", "p-depth_invert", "p-seed"]) {
+for (const id of ["p-hard_brush", "p-standard_brush", "p-soft_brush", "p-color_space", "p-depth_invert", "p-seed", "p-process_gif"]) {
   $(id).addEventListener("change", () => scheduleAutoPreview());
 }
+
+// カスタムブラシ:「PNG を選択…」を選ぶとファイルダイアログを開き、
+// パスを value に持つ option を追加して選択状態にする
+for (const id of ["p-hard_brush", "p-standard_brush", "p-soft_brush"]) {
+  const sel = $(id);
+  let prev = sel.value;
+  sel.addEventListener("change", async () => {
+    if (sel.value !== "__custom__") {
+      prev = sel.value;
+      return;
+    }
+    const path = await dialog.open({
+      multiple: false,
+      filters: [{ name: "ブラシ先端 (グレースケール PNG)", extensions: ["png"] }],
+    });
+    if (typeof path !== "string") {
+      sel.value = prev; // キャンセル時は元に戻す
+      return;
+    }
+    const opt = document.createElement("option");
+    opt.value = path;
+    opt.textContent = `📄 ${path.split(/[\\/]/).pop()}`;
+    sel.insertBefore(opt, sel.querySelector('option[value="__custom__"]'));
+    sel.value = path;
+    prev = path;
+    scheduleAutoPreview();
+  });
+}
+
+// --- ニューラル深度モデル（Depth Anything V2 / ONNX） ---
+$("p-use_depth").addEventListener("change", async (e) => {
+  const chk = e.target;
+  if (!chk.checked) {
+    scheduleAutoPreview();
+    return;
+  }
+  if (depthModelLoaded) {
+    scheduleAutoPreview();
+    return;
+  }
+  const stateEl = $("depth-model-state");
+  stateEl.textContent = "モデルを読み込み中…";
+  try {
+    // まず models/ の既定パスを自動検出、無ければファイル選択
+    const path = await invoke("load_depth_model", { path: null }).catch(async () => {
+      const picked = await dialog.open({
+        multiple: false,
+        filters: [{ name: "ONNX モデル", extensions: ["onnx"] }],
+      });
+      if (typeof picked !== "string") throw new Error("キャンセルされました");
+      return await invoke("load_depth_model", { path: picked });
+    });
+    depthModelLoaded = true;
+    stateEl.textContent = `深度モデル: ${String(path).split(/[\\/]/).pop()}`;
+    scheduleAutoPreview();
+  } catch (err) {
+    chk.checked = false;
+    stateEl.textContent = `読み込めません: ${err}`;
+  }
+});
+
+// --- 外部デプス PNG（白 = 手前。指定時はモデルより優先） ---
+$("btn-depth-file").addEventListener("click", async () => {
+  const path = await dialog.open({
+    multiple: false,
+    filters: [{ name: "デプスマップ", extensions: ["png", "jpg", "jpeg"] }],
+  });
+  if (typeof path !== "string") return;
+  externalDepthPath = path;
+  $("depth-file-name").textContent = path.split(/[\\/]/).pop();
+  $("btn-depth-clear").hidden = false;
+  scheduleAutoPreview();
+});
+
+$("btn-depth-clear").addEventListener("click", () => {
+  externalDepthPath = null;
+  $("depth-file-name").textContent = "";
+  $("btn-depth-clear").hidden = true;
+  scheduleAutoPreview();
+});
+
+// --- 過程 GIF の保存 ---
+$("btn-save-gif").addEventListener("click", async () => {
+  const dest = await dialog.save({
+    defaultPath: "process.gif",
+    filters: [{ name: "GIF", extensions: ["gif"] }],
+  });
+  if (!dest) return;
+  try {
+    await invoke("save_process_gif", { dest });
+    setStatus(`GIF を保存しました: ${dest}`);
+  } catch (e) {
+    setStatus(`GIF 保存失敗: ${e}`);
+  }
+});
 
 function collectParams() {
   const num = (id) => parseFloat($(`p-${id}`).value);
@@ -198,6 +301,13 @@ function collectParams() {
     depth_invert: $("p-depth_invert").checked,
     focus_x: focusPoint ? focusPoint.x : null,
     focus_y: focusPoint ? focusPoint.y : null,
+    focus_depth: num("focus_depth"),
+    hard_quantile: num("hard_quantile"),
+    standard_quantile: num("standard_quantile"),
+    side_sample_prob: num("side_sample_prob"),
+    process_gif: $("p-process_gif").checked,
+    use_depth_model: depthModelLoaded && $("p-use_depth").checked,
+    external_depth_path: externalDepthPath,
     focus_range: num("focus_range"),
     detail_min: num("detail_min"),
     detail_max: num("detail_max"),
@@ -376,6 +486,7 @@ listen("done", ({ payload }) => {
   $("btn-render").disabled = false;
   $("btn-save").disabled = false;
   $("btn-process").disabled = processFrames.length === 0;
+  $("btn-save-gif").disabled = !payload.gif;
   setStatus(`完成: ${payload.strokes} ストローク, ${(payload.millis / 1000).toFixed(1)} 秒`);
   // レンダリング中にパラメータが変わっていたら自動プレビューを続ける
   if (autoDirty) scheduleAutoPreview();

@@ -8,7 +8,7 @@ use std::sync::Mutex;
 
 use base64::Engine as _;
 use image::RgbImage;
-use painterly_core::{Brushes, Callbacks, Params};
+use painterly_core::{Brushes, Callbacks, Params, BUILTIN_BRUSHES};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, State};
 
@@ -17,6 +17,44 @@ use tauri::{AppHandle, Emitter, Manager, State};
 struct RenderState {
     busy: AtomicBool,
     final_image: Mutex<Option<RgbImage>>,
+    /// ロード済みのニューラル深度モデル（Depth Anything V2 等）
+    depth_model: Mutex<Option<painterly_depth::DepthModel>>,
+    /// 直近のレンダリングで生成された process.gif のパス
+    last_gif: Mutex<Option<std::path::PathBuf>>,
+}
+
+/// DTO のブラシ指定がビルトイン名でなければカスタム PNG として登録する
+fn resolve_brushes(p: &mut Params, brushes: &mut Brushes) -> Result<(), String> {
+    for (alias, field) in [
+        ("custom_hard", &mut p.hard_brush),
+        ("custom_standard", &mut p.standard_brush),
+        ("custom_soft", &mut p.soft_brush),
+    ] {
+        if !BUILTIN_BRUSHES.contains(&field.as_str()) {
+            brushes.load_custom(field, alias)?;
+            *field = alias.to_string();
+        }
+    }
+    Ok(())
+}
+
+/// 外部デプス PNG またはニューラル深度モデルから external_depth を用意する
+fn resolve_depth(
+    p: &mut Params,
+    img: &RgbImage,
+    external_path: &Option<String>,
+    use_model: bool,
+    state: &RenderState,
+) -> Result<(), String> {
+    if let Some(path) = external_path {
+        let dm = image::open(path).map_err(|e| format!("デプスマップ {path}: {e}"))?;
+        p.external_depth = Some(dm.to_luma8());
+    } else if use_model {
+        if let Some(model) = state.depth_model.lock().unwrap().as_ref() {
+            p.external_depth = Some(model.estimate(img)?);
+        }
+    }
+    Ok(())
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -50,6 +88,15 @@ struct ParamsDto {
     paper_border: f32,
     pigment: f32,
     edge_darken: f32,
+    focus_depth: f32,
+    hard_quantile: f32,
+    standard_quantile: f32,
+    side_sample_prob: f32,
+    process_gif: bool,
+    /// ニューラル深度モデルを使う（load_depth_model 済みのとき有効）
+    use_depth_model: bool,
+    /// 外部デプスマップ PNG のパス（白 = 手前）。指定時はモデルより優先
+    external_depth_path: Option<String>,
 }
 
 impl Default for ParamsDto {
@@ -84,6 +131,13 @@ impl Default for ParamsDto {
             paper_border: p.paper_border,
             pigment: p.pigment,
             edge_darken: p.edge_darken,
+            focus_depth: p.focus_depth,
+            hard_quantile: p.hard_quantile,
+            standard_quantile: p.standard_quantile,
+            side_sample_prob: p.side_sample_prob,
+            process_gif: false,
+            use_depth_model: false,
+            external_depth_path: None,
         }
     }
 }
@@ -118,6 +172,11 @@ impl From<ParamsDto> for Params {
             paper_border: d.paper_border,
             pigment: d.pigment,
             edge_darken: d.edge_darken,
+            focus_depth: d.focus_depth,
+            hard_quantile: d.hard_quantile,
+            standard_quantile: d.standard_quantile,
+            side_sample_prob: d.side_sample_prob,
+            process_gif: d.process_gif,
             ..Params::default()
         }
     }
@@ -155,6 +214,13 @@ impl From<&Params> for ParamsDto {
             paper_border: p.paper_border,
             pigment: p.pigment,
             edge_darken: p.edge_darken,
+            focus_depth: p.focus_depth,
+            hard_quantile: p.hard_quantile,
+            standard_quantile: p.standard_quantile,
+            side_sample_prob: p.side_sample_prob,
+            process_gif: false,
+            use_depth_model: false,
+            external_depth_path: None,
         }
     }
 }
@@ -196,6 +262,8 @@ struct DoneEvent {
     strokes: usize,
     millis: u128,
     data_url: String,
+    /// process.gif が生成されたか（GIF 保存ボタンの活性化用）
+    gif: bool,
 }
 
 #[derive(Serialize)]
@@ -258,8 +326,19 @@ fn start_render(
         let state = app2.state::<RenderState>();
         let result = (|| -> Result<(), String> {
             let img = image::open(&path).map_err(|e| format!("{path}: {e}"))?.to_rgb8();
-            let p: Params = params.into();
+            let dto = params;
+            let mut p: Params = dto.clone().into();
             let mut brushes = Brushes::new();
+            resolve_brushes(&mut p, &mut brushes)?;
+            resolve_depth(&mut p, &img, &dto.external_depth_path, dto.use_depth_model, &state)?;
+            // 過程 GIF は一時ディレクトリに書き出し、保存時にコピーする
+            let out_dir = if p.process_gif {
+                let dir = std::env::temp_dir().join("img-watercolor-gui");
+                std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+                Some(dir)
+            } else {
+                None
+            };
             let t0 = std::time::Instant::now();
 
             let mut on_stage = |name: &str, img: &RgbImage| {
@@ -276,20 +355,25 @@ fn start_render(
             };
             let res = painterly_core::run_pipeline(
                 &img,
-                None,
+                out_dir.as_deref(),
                 &p,
                 &mut brushes,
                 Callbacks { on_stage: Some(&mut on_stage), on_paint_progress: Some(&mut on_progress) },
                 false,
             )?;
+            let gif_path = out_dir
+                .map(|d| d.join("process.gif"))
+                .filter(|g| g.exists());
             let _ = app2.emit(
                 "done",
                 DoneEvent {
                     strokes: res.strokes,
                     millis: t0.elapsed().as_millis(),
                     data_url: to_data_url(&res.final_image),
+                    gif: gif_path.is_some(),
                 },
             );
+            *state.last_gif.lock().unwrap() = gif_path;
             *state.final_image.lock().unwrap() = Some(res.final_image);
             Ok(())
         })();
@@ -324,6 +408,10 @@ fn apply_sweep_value(p: &mut Params, name: &str, v: f64) -> Result<(), String> {
         "paper_border" => p.paper_border = v as f32,
         "pigment" => p.pigment = v as f32,
         "edge_darken" => p.edge_darken = v as f32,
+        "focus_depth" => p.focus_depth = v as f32,
+        "hard_quantile" => p.hard_quantile = v as f32,
+        "standard_quantile" => p.standard_quantile = v as f32,
+        "side_sample_prob" => p.side_sample_prob = v as f32,
         "seed" => p.seed = v as u64,
         other => return Err(format!("走査できないパラメータ: {other}")),
     }
@@ -356,8 +444,12 @@ fn start_sweep(
         let state = app2.state::<RenderState>();
         let result = (|| -> Result<(), String> {
             let img = image::open(&path).map_err(|e| format!("{path}: {e}"))?.to_rgb8();
-            let base: Params = params.into();
+            let dto = params;
+            let mut base: Params = dto.clone().into();
             let mut brushes = Brushes::new();
+            resolve_brushes(&mut base, &mut brushes)?;
+            // 深度は画像ごとに一定なので走査前に 1 回だけ解決する
+            resolve_depth(&mut base, &img, &dto.external_depth_path, dto.use_depth_model, &state)?;
             for (index, &value) in values.iter().enumerate() {
                 let mut p = base.clone();
                 apply_sweep_value(&mut p, &sweep_param, value)?;
@@ -395,6 +487,37 @@ fn start_sweep(
     Ok(())
 }
 
+/// ニューラル深度モデルを読み込む。path 未指定なら models/ の既定パスを自動検出。
+/// 成功時は読み込んだパスを返す
+#[tauri::command]
+fn load_depth_model(state: State<'_, RenderState>, path: Option<String>) -> Result<String, String> {
+    let path = match path {
+        Some(p) => std::path::PathBuf::from(p),
+        None => {
+            let default = std::path::PathBuf::from("models/depth_anything_v2_small.onnx");
+            if !default.exists() {
+                return Err(
+                    "models/depth_anything_v2_small.onnx が見つかりません（scripts/fetch_models.sh で取得するか、.onnx を指定してください）"
+                        .into(),
+                );
+            }
+            default
+        }
+    };
+    let model = painterly_depth::DepthModel::load(&path, None)?;
+    *state.depth_model.lock().unwrap() = Some(model);
+    Ok(path.display().to_string())
+}
+
+/// 直近のレンダリングで生成された process.gif を保存する
+#[tauri::command]
+fn save_process_gif(state: State<'_, RenderState>, dest: String) -> Result<(), String> {
+    let guard = state.last_gif.lock().unwrap();
+    let src = guard.as_ref().ok_or("保存できる過程 GIF がありません")?;
+    std::fs::copy(src, &dest).map_err(|e| format!("{dest}: {e}"))?;
+    Ok(())
+}
+
 #[tauri::command]
 fn save_image(state: State<'_, RenderState>, dest: String) -> Result<(), String> {
     let guard = state.final_image.lock().unwrap();
@@ -411,7 +534,9 @@ pub fn run() {
             start_render,
             save_image,
             get_presets,
-            start_sweep
+            start_sweep,
+            load_depth_model,
+            save_process_gif
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

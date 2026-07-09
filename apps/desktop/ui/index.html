@@ -72,18 +72,30 @@
       <label>細かさ上限（焦点側） <span id="v-detail_max">1.15</span>
         <input type="range" id="p-detail_max" min="1" max="1.6" step="0.05" value="1.15" />
       </label>
+      <label>フォーカス深度（クリック未指定時） <span id="v-focus_depth">0.00</span>
+        <input type="range" id="p-focus_depth" min="0" max="1" step="0.05" value="0" />
+      </label>
       <label class="row">奥行き反転
         <input type="checkbox" id="p-depth_invert" />
       </label>
+      <label class="row" title="Depth Anything V2 (ONNX) で高精度な深度を推定します">ニューラル深度
+        <input type="checkbox" id="p-use_depth" />
+      </label>
+      <div class="file-row">
+        <button id="btn-depth-file" class="mini">外部デプス PNG…</button>
+        <span id="depth-file-name" class="file-name"></span>
+        <button id="btn-depth-clear" class="mini" hidden>✕</button>
+      </div>
+      <div id="depth-model-state" class="hint"></div>
     </details>
 
     <details class="group" open>
       <summary>線 / 紙 / 水彩</summary>
-      <label>輪郭線の強さ <span id="v-line_strength">0.40</span>
+      <label>輪郭線の濃さ <span id="v-line_strength">0.40</span>
         <input type="range" id="p-line_strength" min="0" max="1" step="0.05" value="0.4" />
       </label>
       <label>輪郭線の太さ <span id="v-line_width">1.0</span>px
-        <input type="range" id="p-line_width" min="0.5" max="3" step="0.1" value="1" />
+        <input type="range" id="p-line_width" min="0.3" max="3" step="0.1" value="1" />
       </label>
       <label>透明水彩 <span id="v-pigment">0.00</span>
         <input type="range" id="p-pigment" min="0" max="1" step="0.05" value="0" />
@@ -104,19 +116,19 @@
       <label class="row">ハードブラシ
         <select id="p-hard_brush">
           <option selected>triangle</option><option>flat</option><option>soft</option>
-          <option>oil</option><option>pastel</option><option>charcoal</option><option>wash</option><option>bleed</option><option>drybrush</option><option>pencil</option><option>impasto</option>
+          <option>oil</option><option>pastel</option><option>charcoal</option><option>wash</option><option>bleed</option><option>drybrush</option><option>pencil</option><option>impasto</option><option value="__custom__">PNG を選択…</option>
         </select>
       </label>
       <label class="row">スタンダード
         <select id="p-standard_brush">
           <option>triangle</option><option selected>flat</option><option>soft</option>
-          <option>oil</option><option>pastel</option><option>charcoal</option><option>wash</option><option>bleed</option><option>drybrush</option><option>pencil</option><option>impasto</option>
+          <option>oil</option><option>pastel</option><option>charcoal</option><option>wash</option><option>bleed</option><option>drybrush</option><option>pencil</option><option>impasto</option><option value="__custom__">PNG を選択…</option>
         </select>
       </label>
       <label class="row">ソフトブラシ
         <select id="p-soft_brush">
           <option>triangle</option><option>flat</option><option selected>soft</option>
-          <option>oil</option><option>pastel</option><option>charcoal</option><option>wash</option><option>bleed</option><option>drybrush</option><option>pencil</option><option>impasto</option>
+          <option>oil</option><option>pastel</option><option>charcoal</option><option>wash</option><option>bleed</option><option>drybrush</option><option>pencil</option><option>impasto</option><option value="__custom__">PNG を選択…</option>
         </select>
       </label>
       <label class="row">色空間
@@ -127,9 +139,26 @@
       </label>
     </details>
 
+    <details class="group">
+      <summary>上級</summary>
+      <label>ハード刷り分け分位数 <span id="v-hard_quantile">0.85</span>
+        <input type="range" id="p-hard_quantile" min="0.5" max="0.99" step="0.01" value="0.85" />
+      </label>
+      <label>スタンダード分位数 <span id="v-standard_quantile">0.55</span>
+        <input type="range" id="p-standard_quantile" min="0.2" max="0.9" step="0.01" value="0.55" />
+      </label>
+      <label>横取り採色率 <span id="v-side_sample_prob">0.30</span>
+        <input type="range" id="p-side_sample_prob" min="0" max="1" step="0.05" value="0.3" />
+      </label>
+      <label class="row" title="一筆ごとの描画過程を GIF に書き出します（レンダリングが少し遅くなります）">過程 GIF を生成
+        <input type="checkbox" id="p-process_gif" />
+      </label>
+    </details>
+
     <div class="buttons">
       <button id="btn-process" disabled>過程を再生</button>
       <button id="btn-save" disabled>画像を保存</button>
+      <button id="btn-save-gif" disabled>GIF</button>
     </div>
 
     <div id="status">画像をドラッグ＆ドロップするか「画像を開く」</div>

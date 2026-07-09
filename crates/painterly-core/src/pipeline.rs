@@ -335,6 +335,13 @@ pub fn run_pipeline(
             m = dilate(&m, p.line_width - 1.0);
         }
         let mut m = gaussian_blur(&m, 0.5);
+        // 1.0 未満は細線化: ソフトエッジをべき乗で締めて実効幅を落とす
+        if p.line_width < 1.0 {
+            let e = (1.0 / p.line_width.max(0.3)).min(3.5);
+            for v in &mut m.data {
+                *v = v.powf(e);
+            }
+        }
 
         // 鉛筆の質感: 細かい紙目 + 粗いノイズで線を途切れさせる（シード固定で再現可能）
         let mut nrng = Rng64::seed_from(p.seed ^ 0x70656e63); // "penc"

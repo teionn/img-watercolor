@@ -78,6 +78,22 @@ button.mini {
   color: #9aa0ab;
 }
 
+.file-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.file-row .mini { flex: 0 0 auto; }
+.file-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #7fb2e8;
+  font-size: 11px;
+}
+.hint { color: #6b6f78; font-size: 11px; min-height: 1em; }
+
 /* パラメータ走査（スイープ）ボタンと比較パネル */
 .param-head {
   display: flex;
