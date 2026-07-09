@@ -80,6 +80,24 @@ pub fn presets() -> Vec<Preset> {
             },
         },
         Preset {
+            name: "ポートレート",
+            description: "人物向け。顔検出強化 + 高忠実の色境界 + 細部保持で目鼻を残す",
+            params: Params {
+                pixels: 260,
+                resolution: 640,
+                palette: 72,
+                brush_size: 10.0,
+                wet: 0.08,
+                saturation: 1.05,
+                color_fidelity: 0.75,
+                detail_retention: 0.7,
+                detail_overlay: 0.35,
+                face_detail: 0.85,
+                line_strength: 0.3,
+                ..base()
+            },
+        },
+        Preset {
             name: "細密",
             description: "解像度と色数を上げてディテールを残す",
             params: Params {
