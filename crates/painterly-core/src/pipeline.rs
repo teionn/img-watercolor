@@ -59,6 +59,15 @@ pub struct Params {
     /// 細かい色境界で止まり（色差しきい値を下げる）、塗り色も元画像へ寄せる。
     /// 低いと減色されたフラットで大づかみな色面になる
     pub color_fidelity: f32,
+    /// 細部保持 0..1。フローが不明瞭な平坦部（顔の肌など）でストロークを短くし、
+    /// 長い渦巻きストロークが目・鼻・口を塗り潰すのを防ぐ
+    pub detail_retention: f32,
+    /// フォーカス点まわりのディテール強化 0..1。クリック位置の近傍で密度を上げ、
+    /// 小さいハードブラシ・細かいタッチにする（人物の顔向け）。focus_point 必須
+    pub focus_detail: f32,
+    /// 細部の輝度を最終出力に戻す強さ 0..1。元画像の高周波（目鼻口の陰影）を
+    /// 薄く重ね、ストロークで潰れた細部を透かす
+    pub detail_overlay: f32,
     /// 中密度領域用ブラシ
     pub standard_brush: String,
     /// 広い面・低コントラスト領域用ブラシ
@@ -151,6 +160,9 @@ impl Default for Params {
             size_curve: Vec::new(),
             length_curve: Vec::new(),
             color_fidelity: 0.5,
+            detail_retention: 0.4,
+            focus_detail: 0.0,
+            detail_overlay: 0.0,
             hard_brush: "triangle".into(),
             standard_brush: "flat".into(),
             soft_brush: "soft".into(),
@@ -315,6 +327,26 @@ pub fn run_pipeline(
         }
     }
 
+    // フォーカス点まわりのディテール強化（人物の顔向け）: クリック位置の空間近傍で
+    // 密度を上げ、小さいハードブラシ・細かいタッチにする。深度ではなく画面上の距離で効かせる
+    if p.focus_detail > 0.0 {
+        if let Some((fx, fy)) = p.focus_point {
+            let cx = fx.clamp(0.0, 1.0) * (cw - 1) as f32;
+            let cy = fy.clamp(0.0, 1.0) * (ch - 1) as f32;
+            // 半径は focus_range に連動（短辺比）。狭いほどピンポイントに効く
+            let sigma = (p.focus_range.max(0.05) * cw.min(ch) as f32).max(12.0);
+            let inv2s2 = 1.0 / (2.0 * sigma * sigma);
+            for y in 0..ch {
+                for x in 0..cw {
+                    let d2 = (x as f32 - cx).powi(2) + (y as f32 - cy).powi(2);
+                    let w = (-d2 * inv2s2).exp();
+                    let i = y * cw + x;
+                    dens.data[i] = (dens.data[i] * (1.0 + 1.5 * p.focus_detail * w)).clamp(0.0, 1.2);
+                }
+            }
+        }
+    }
+
     stage!("1_original", img_rgb.clone());
     stage!("2_quantized", q.quantized.clone());
     stage!("3_posterize_edges", poster);
@@ -385,7 +417,15 @@ pub fn run_pipeline(
     // 下塗り・細部層のスケールに使う。無ければ従来どおり brush_size
     let use_size_curve = !p.size_curve.is_empty();
     let bs = if use_size_curve { eval_curve(&p.size_curve, 0.0).max(1.0) } else { p.brush_size };
-    let engine = PaintEngine::new(&target, &boundary, color_tol, &theta, &coh, &dens);
+    let engine = PaintEngine::new(
+        &target,
+        &boundary,
+        color_tol,
+        &theta,
+        &coh,
+        p.detail_retention.clamp(0.0, 1.0),
+        &dens,
+    );
 
     // 密度 → ストローク長倍率。length_curve があればそれ、無ければ一律 brush_length
     let len_of = |d: f32| -> f32 {
@@ -668,6 +708,29 @@ pub fn run_pipeline(
         }
     }
 
+    // --- 細部の輝度を戻す（後処理）---
+    // 元画像の高周波輝度（目・鼻・口の陰影）を最終出力に薄く重ね、ストロークで
+    // 潰れた細部を透かす。アンシャープ的だが元絵の細部にだけ効くので破綻しにくい
+    if p.detail_overlay > 0.0 {
+        let (fw, fh) = (final_img.width() as usize, final_img.height() as usize);
+        let src = resize_rgb_bilinear(img_rgb, fw as u32, fh as u32);
+        let mut lum = Gray::new(fw, fh);
+        for (i, px) in src.pixels().enumerate() {
+            lum.data[i] =
+                px.0[0] as f32 * 0.299 + px.0[1] as f32 * 0.587 + px.0[2] as f32 * 0.114;
+        }
+        // 高周波 = 原輝度 - ぼかし輝度。σ は出力短辺に対する細かいスケール
+        let sigma = (fw.min(fh) as f32 * 0.006).max(1.0);
+        let blur = gaussian_blur(&lum, sigma);
+        let amount = p.detail_overlay * 0.9;
+        for (i, px) in final_img.pixels_mut().enumerate() {
+            let hf = (lum.data[i] - blur.data[i]) * amount; // 符号付きの陰影差
+            for c in 0..3 {
+                px.0[c] = (px.0[c] as f32 + hf).round().clamp(0.0, 255.0) as u8;
+            }
+        }
+    }
+
     // 紙のテクスチャと余白は最終解像度で適用（拡大でボケさせない）
     crate::paper::apply_paper(&mut final_img, p.paper_texture, p.paper_border, p.seed);
     stage!("8_painting", final_img.clone());
@@ -848,5 +911,34 @@ mod tests {
         let mut hi = Params::default();
         hi.color_fidelity = 1.0;
         assert_ne!(paint_bytes(&lo), paint_bytes(&hi));
+    }
+
+    #[test]
+    fn detail_retention_changes_output() {
+        let mut off = Params::default();
+        off.detail_retention = 0.0;
+        let mut on = Params::default();
+        on.detail_retention = 1.0;
+        assert_ne!(paint_bytes(&off), paint_bytes(&on));
+    }
+
+    #[test]
+    fn detail_overlay_changes_output() {
+        let mut off = Params::default();
+        off.detail_overlay = 0.0;
+        let mut on = Params::default();
+        on.detail_overlay = 1.0;
+        assert_ne!(paint_bytes(&off), paint_bytes(&on));
+    }
+
+    #[test]
+    fn focus_detail_boost_changes_output() {
+        let mut off = Params::default();
+        off.focus_point = Some((0.5, 0.5));
+        off.focus_detail = 0.0;
+        let mut on = Params::default();
+        on.focus_point = Some((0.5, 0.5));
+        on.focus_detail = 1.0;
+        assert_ne!(paint_bytes(&off), paint_bytes(&on));
     }
 }

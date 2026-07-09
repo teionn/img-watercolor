@@ -47,6 +47,19 @@
     </details>
 
     <details class="group" open>
+      <summary>細部・人物（顔向け）</summary>
+      <label>細部保持（平坦部で短く） <span id="v-detail_retention">0.40</span>
+        <input type="range" id="p-detail_retention" min="0" max="1" step="0.05" value="0.4" />
+      </label>
+      <label>細部の輝度を戻す <span id="v-detail_overlay">0.00</span>
+        <input type="range" id="p-detail_overlay" min="0" max="1" step="0.05" value="0" />
+      </label>
+      <label title="先にプレビュー上で顔をクリックしてフォーカス位置を指定してください">フォーカス部を強化（要クリック） <span id="v-focus_detail">0.00</span>
+        <input type="range" id="p-focus_detail" min="0" max="1" step="0.05" value="0" />
+      </label>
+    </details>
+
+    <details class="group" open>
       <summary>ブラシ（密度カーブ）</summary>
       <p class="curve-note">横軸 = 密度（左：平坦な面 → 右：輪郭・細部）。点をドラッグで調整、空白クリックで点を追加、点をダブルクリックで削除。</p>
       <div class="curve-block">

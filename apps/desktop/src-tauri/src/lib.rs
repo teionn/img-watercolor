@@ -70,6 +70,15 @@ struct ParamsDto {
     brush_length: f32,
     /// 色の境を元絵に忠実にする度合い 0..1
     color_fidelity: f32,
+    /// 細部保持 0..1（平坦部でストロークを短く）
+    #[serde(default)]
+    detail_retention: f32,
+    /// フォーカス点まわりのディテール強化 0..1
+    #[serde(default)]
+    focus_detail: f32,
+    /// 細部の輝度を戻す強さ 0..1
+    #[serde(default)]
+    detail_overlay: f32,
     /// 密度→半径(px) カーブの制御点 [[密度,半径], ...]。空なら brush_size 従来動作
     #[serde(default)]
     size_curve: Vec<[f32; 2]>,
@@ -133,6 +142,9 @@ impl Default for ParamsDto {
             brush_size: p.brush_size,
             brush_length: p.brush_length,
             color_fidelity: p.color_fidelity,
+            detail_retention: p.detail_retention,
+            focus_detail: p.focus_detail,
+            detail_overlay: p.detail_overlay,
             size_curve: if p.size_curve.is_empty() { synth_size_curve(p.brush_size) } else { p.size_curve },
             length_curve: if p.length_curve.is_empty() { synth_length_curve(p.brush_length) } else { p.length_curve },
             hard_brush: p.hard_brush,
@@ -179,6 +191,9 @@ impl From<ParamsDto> for Params {
             brush_size: d.brush_size,
             brush_length: d.brush_length,
             color_fidelity: d.color_fidelity,
+            detail_retention: d.detail_retention,
+            focus_detail: d.focus_detail,
+            detail_overlay: d.detail_overlay,
             size_curve: d.size_curve,
             length_curve: d.length_curve,
             hard_brush: d.hard_brush,
@@ -224,6 +239,9 @@ impl From<&Params> for ParamsDto {
             brush_size: p.brush_size,
             brush_length: p.brush_length,
             color_fidelity: p.color_fidelity,
+            detail_retention: p.detail_retention,
+            focus_detail: p.focus_detail,
+            detail_overlay: p.detail_overlay,
             size_curve: if p.size_curve.is_empty() { synth_size_curve(p.brush_size) } else { p.size_curve.clone() },
             length_curve: if p.length_curve.is_empty() { synth_length_curve(p.brush_length) } else { p.length_curve.clone() },
             hard_brush: p.hard_brush.clone(),

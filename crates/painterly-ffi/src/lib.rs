@@ -52,6 +52,15 @@ pub struct RenderParams {
     /// 色の境を元絵に忠実にする度合い 0..1（高いほど元画像の色境界で止まり色も元絵寄り）
     #[uniffi(default = 0.5)]
     pub color_fidelity: f32,
+    /// 細部保持 0..1（平坦部でストロークを短くし細部の塗り潰しを防ぐ）
+    #[uniffi(default = 0.4)]
+    pub detail_retention: f32,
+    /// フォーカス点まわりのディテール強化 0..1（focus_point 指定時に有効）
+    #[uniffi(default = 0.0)]
+    pub focus_detail: f32,
+    /// 細部の輝度を最終出力に戻す強さ 0..1
+    #[uniffi(default = 0.0)]
+    pub detail_overlay: f32,
     /// 輪郭・高密度領域用ブラシ（triangle/flat/soft/oil/pastel/charcoal）
     #[uniffi(default = "triangle")]
     pub hard_brush: String,
@@ -129,6 +138,9 @@ impl Default for RenderParams {
             brush_size: p.brush_size,
             brush_length: p.brush_length,
             color_fidelity: p.color_fidelity,
+            detail_retention: p.detail_retention,
+            focus_detail: p.focus_detail,
+            detail_overlay: p.detail_overlay,
             hard_brush: p.hard_brush,
             standard_brush: p.standard_brush,
             soft_brush: p.soft_brush,
@@ -167,6 +179,9 @@ impl From<RenderParams> for Params {
             brush_size: d.brush_size,
             brush_length: d.brush_length,
             color_fidelity: d.color_fidelity,
+            detail_retention: d.detail_retention,
+            focus_detail: d.focus_detail,
+            detail_overlay: d.detail_overlay,
             hard_brush: d.hard_brush,
             standard_brush: d.standard_brush,
             soft_brush: d.soft_brush,
@@ -274,6 +289,9 @@ pub fn presets() -> Vec<PresetInfo> {
                     brush_size: d.brush_size,
                     brush_length: d.brush_length,
                     color_fidelity: d.color_fidelity,
+                    detail_retention: d.detail_retention,
+                    focus_detail: d.focus_detail,
+                    detail_overlay: d.detail_overlay,
                     hard_brush: d.hard_brush.clone(),
                     standard_brush: d.standard_brush.clone(),
                     soft_brush: d.soft_brush.clone(),

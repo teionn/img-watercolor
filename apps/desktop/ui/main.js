@@ -36,7 +36,8 @@ let replayTimer = null;
 let finalDataUrl = null;
 
 const SLIDERS = [
-  "color_fidelity", "pixels", "resolution", "palette", "posterize_blur", "normal_blur",
+  "color_fidelity", "detail_retention", "detail_overlay", "focus_detail",
+  "pixels", "resolution", "palette", "posterize_blur", "normal_blur",
   "strokes_scale", "wet", "saturation", "depth_detail", "out_long",
   "focus_range", "detail_min", "detail_max", "line_strength", "line_width",
   "paper_texture", "paper_border", "pigment", "edge_darken",
@@ -58,6 +59,9 @@ const PARAM_HELP = {
   posterize_blur: "減色前のぼかし。大きいと色面が滑らかに繋がる",
   normal_blur: "方向場の平滑さ。大きいとストロークが大きくうねる",
   color_fidelity: "色の境を元絵にどれだけ忠実にするか。高いほど元画像の色境界でストロークが止まり、塗り色も元絵に寄る",
+  detail_retention: "フローが不明瞭な平坦部（顔の肌など）でストロークを短くし、長い渦巻きストロークが目・鼻・口を潰すのを防ぐ",
+  detail_overlay: "元画像の高周波な陰影（目鼻口）を最終出力に薄く重ね、ストロークで潰れた細部を透かす",
+  focus_detail: "プレビューでクリックしたフォーカス位置の近傍で密度を上げ、小さいブラシ・細かいタッチにする（顔向け）",
   strokes_scale: "ストローク本数の倍率",
   wet: "筆を置くとき下の色と混ざる比率（ウェットブレンディング）",
   saturation: "彩度の倍率",
@@ -417,6 +421,9 @@ function collectParams() {
     posterize_blur: num("posterize_blur"),
     normal_blur: num("normal_blur"),
     color_fidelity: num("color_fidelity"),
+    detail_retention: num("detail_retention"),
+    detail_overlay: num("detail_overlay"),
+    focus_detail: num("focus_detail"),
     // 太さ・長さは密度カーブで指定する。brush_size/brush_length は
     // カーブが非空のときコア側で無視されるが、DTO を満たすため送っておく
     brush_size: 15,

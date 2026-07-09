@@ -56,6 +56,15 @@ struct Args {
     /// 色の境を元絵に忠実にする度合い 0..1。高いほど元画像の細かい色境界で止まり色も元絵寄り [既定: 0.5]
     #[arg(long)]
     color_fidelity: Option<f32>,
+    /// 細部保持 0..1。平坦部（顔の肌など）でストロークを短くし細部の塗り潰しを防ぐ [既定: 0.4]
+    #[arg(long)]
+    detail_retention: Option<f32>,
+    /// フォーカス点まわりのディテール強化 0..1（--focus-x/-y 指定時に有効） [既定: 0.0]
+    #[arg(long)]
+    focus_detail: Option<f32>,
+    /// 細部の輝度を最終出力に戻す強さ 0..1（元画像の高周波を薄く重ねる） [既定: 0.0]
+    #[arg(long)]
+    detail_overlay: Option<f32>,
     /// ハードブラシ: ビルトイン名または グレースケール PNG のパス [既定: triangle]
     #[arg(long)]
     hard_brush: Option<String>,
@@ -200,6 +209,8 @@ fn main() {
         color_space <- color_space, posterize_blur <- posterize_blur,
         normal_blur <- normal_blur, brush_size <- brush_size,
         brush_length <- brush_length, color_fidelity <- color_fidelity,
+        detail_retention <- detail_retention, focus_detail <- focus_detail,
+        detail_overlay <- detail_overlay,
         hard_brush <- hard_brush, standard_brush <- standard_brush,
         soft_brush <- soft_brush, strokes_scale <- strokes, wet <- wet,
         saturation <- saturation, out_long <- out_long, seed <- seed,

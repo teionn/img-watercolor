@@ -43,21 +43,36 @@ pub struct PaintEngine<'a> {
     pub color_tol: f32,
     pub theta: &'a Gray,
     pub coherence: &'a Gray,
+    /// フローが不明瞭な平坦部でストロークをどれだけ短くするか 0..1。
+    /// 顔の肌など coherence が低い所での「渦巻き塗り潰し」を抑え、細部を残す
+    pub coh_length: f32,
     pub density: &'a Gray,
     pub w: usize,
     pub h: usize,
 }
 
 impl<'a> PaintEngine<'a> {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         target: &'a Rgb32,
         boundary: &'a Rgb32,
         color_tol: f32,
         theta: &'a Gray,
         coherence: &'a Gray,
+        coh_length: f32,
         density: &'a Gray,
     ) -> Self {
-        PaintEngine { target, boundary, color_tol, theta, coherence, density, w: target.w, h: target.h }
+        PaintEngine {
+            target,
+            boundary,
+            color_tol,
+            theta,
+            coherence,
+            coh_length,
+            density,
+            w: target.w,
+            h: target.h,
+        }
     }
 
     #[inline]
@@ -165,7 +180,11 @@ impl<'a> PaintEngine<'a> {
                     ];
                 }
 
-                let pts = self.trace(xi as f32, yi as f32, radius, len_of(d));
+                // フローが不明瞭な平坦部（低 coherence）ではストロークを短くする。
+                // 顔の肌などで長いストロークが渦を巻いて細部を潰すのを防ぐ
+                let coh = self.coherence.at(xi, yi);
+                let len_gate = 1.0 - self.coh_length * (1.0 - coh);
+                let pts = self.trace(xi as f32, yi as f32, radius, len_of(d) * len_gate);
                 let tag = tag_of(d);
                 // ハードブラシは輪郭を「噛ませる」ため不透明度を高く、
                 // ソフトブラシは重ね塗りしやすいよう低めに
