@@ -135,6 +135,14 @@ pub struct Params {
     pub edge_darken: f32,
 }
 
+/// 顔ボックスの大きさ → 密度ブーストの利得 0..1。
+/// 長辺比 6% 以下で 0（ブースト最小）、35% 以上で 1（フル）。
+/// 小さい顔では密度ブーストが斑点の原因になるため色の忠実化に切り替える
+fn face_size_gain(region: &[f32; 4]) -> f32 {
+    let frac = (region[2] - region[0]).abs().max((region[3] - region[1]).abs());
+    ((frac - 0.06) / 0.29).clamp(0.0, 1.0)
+}
+
 /// 密度 x∈0..1 → 値。制御点は x 昇順の [x, y]。区間内は線形補間、範囲外は端の値で
 /// クランプ。制御点が空のときは呼び出し側でフォールバックする（ここでは 0 を返す）。
 pub fn eval_curve(points: &[[f32; 2]], x: f32) -> f32 {
@@ -369,11 +377,17 @@ pub fn run_pipeline(
     }
 
     // 顔検出によるディテール強化: 検出済みの各顔ボックス内で密度を上げる。
-    // ボックス中心を頂点に楕円状に減衰させ、輪郭付近まで自然に効かせる
+    // ボックス中心を頂点に楕円状に減衰させ、輪郭付近まで自然に効かせる。
+    //
+    // ブーストは顔の大きさで自動減衰する——小さい顔（画面比 ~6% 以下）で密度だけ
+    // 上げると、小さいハードブラシが周囲の暗色を顔に飛び散らせて斑点になる。
+    // 小さい顔は代わりに後段の「色の忠実化」で守る（target 構築後を参照）
     if p.face_detail > 0.0 {
         for &[x0, y0, x1, y1] in &p.face_regions {
             let (x0, x1) = (x0.min(x1), x0.max(x1));
             let (y0, y1) = (y0.min(y1), y0.max(y1));
+            let size_gain = face_size_gain(&[x0, y0, x1, y1]);
+            let boost = 1.5 * p.face_detail * (0.25 + 0.75 * size_gain);
             let bcx = (x0 + x1) * 0.5 * cw as f32;
             let bcy = (y0 + y1) * 0.5 * ch as f32;
             // 半径はボックスの半幅・半高。少し広げて縁も含める
@@ -385,7 +399,7 @@ pub fn run_pipeline(
                     let ny = (y as f32 - bcy) / ry;
                     let w = (-(nx * nx + ny * ny) * 1.5).exp(); // 楕円ガウス
                     let i = y * cw + x;
-                    dens.data[i] = (dens.data[i] * (1.0 + 1.5 * p.face_detail * w)).clamp(0.0, 1.2);
+                    dens.data[i] = (dens.data[i] * (1.0 + boost * w)).clamp(0.0, 1.2);
                 }
             }
         }
@@ -464,6 +478,42 @@ pub fn run_pipeline(
     }
     // 忠実度が高いほど色差しきい値を下げ、元画像の細かい境界で止める
     let color_tol = 0.12 - 0.075 * fidelity;
+
+    // 小さい顔の保護: 密度ブーストを効かせられない小さい顔は、顔領域のターゲット色を
+    // 元画像へ強く寄せる（局所的な color_fidelity）。減色で目鼻が潰れたり、
+    // 周囲の暗色パレットが顔に混ざるのを防ぐ
+    if p.face_detail > 0.0 {
+        for region in &p.face_regions {
+            let [x0, y0, x1, y1] = *region;
+            let (x0, x1) = (x0.min(x1), x0.max(x1));
+            let (y0, y1) = (y0.min(y1), y0.max(y1));
+            // 大きい顔ほど 0 に近づく（密度ブースト側で守られるため）
+            let refine = p.face_detail * (1.0 - face_size_gain(&[x0, y0, x1, y1]));
+            if refine <= 0.02 {
+                continue;
+            }
+            let bcx = (x0 + x1) * 0.5 * cw as f32;
+            let bcy = (y0 + y1) * 0.5 * ch as f32;
+            let rx = (((x1 - x0) * 0.5 * cw as f32) * 1.15).max(4.0);
+            let ry = (((y1 - y0) * 0.5 * ch as f32) * 1.15).max(4.0);
+            for y in 0..ch {
+                for x in 0..cw {
+                    let nx = (x as f32 - bcx) / rx;
+                    let ny = (y as f32 - bcy) / ry;
+                    let w = (-(nx * nx + ny * ny) * 1.5).exp();
+                    let k = (refine * w).min(1.0);
+                    if k <= 0.01 {
+                        continue;
+                    }
+                    let i = y * cw + x;
+                    for c in 0..3 {
+                        target.data[i][c] =
+                            target.data[i][c] * (1.0 - k) + boundary.data[i][c] * k;
+                    }
+                }
+            }
+        }
+    }
 
     // 輪郭線は最終出力解像度で抽出・合成する（キャンバス解像度で描いて拡大すると
     // 太くぼやけるため）。実装は final_img 生成後を参照
