@@ -219,8 +219,6 @@ pub fn run_pipeline(
         gray.data[i] = (px.0[0] as f32 * 0.299 + px.0[1] as f32 * 0.587 + px.0[2] as f32 * 0.114)
             / 255.0;
     }
-    // ぼかす前のグレースケールは輪郭線（鉛筆下書き）の抽出に使う
-    let gray_sharp = gray.clone();
     let gray = gaussian_blur(&gray, p.normal_blur.max(0.5));
     let gx = crate::buf::sobel_x(&gray);
     let gy = crate::buf::sobel_y(&gray);
@@ -310,71 +308,8 @@ pub fn run_pipeline(
         ];
     }
 
-    // 輪郭線マスク: 「鉛筆で描いた下書き」を目指す。
-    // 減色後ではなく **元画像**（ぼかす前のグレースケール）からエッジを取るので、
-    // 減色で潰れた顔のパーツ・髪・布のディテール線も拾える。
-    // 絵のタッチとは独立したレイヤーとして描画後に重ねる
-    let line_mask = if p.line_strength > 0.0 {
-        let smoothstep = |e0: f32, e1: f32, x: f32| -> f32 {
-            let t = ((x - e0) / (e1 - e0)).clamp(0.0, 1.0);
-            t * t * (3.0 - 2.0 * t)
-        };
-        // 軽い平滑化 → 勾配強度 → 分位数正規化 → ソフト閾値
-        let g1 = gaussian_blur(&gray_sharp, 1.2);
-        let egx = crate::buf::sobel_x(&g1);
-        let egy = crate::buf::sobel_y(&g1);
-        let mut m = Gray::new(cw, ch);
-        for i in 0..cw * ch {
-            m.data[i] = egx.data[i].hypot(egy.data[i]);
-        }
-        let p97 = quantile(&m.data, 0.97) + 1e-8;
-        for v in &mut m.data {
-            *v = smoothstep(0.25, 0.70, *v / p97);
-        }
-        if p.line_width > 1.0 {
-            m = dilate(&m, p.line_width - 1.0);
-        }
-        let mut m = gaussian_blur(&m, 0.5);
-        // 1.0 未満は細線化: ソフトエッジをべき乗で締めて実効幅を落とす
-        if p.line_width < 1.0 {
-            let e = (1.0 / p.line_width.max(0.3)).min(3.5);
-            for v in &mut m.data {
-                *v = v.powf(e);
-            }
-        }
-
-        // 鉛筆の質感: 細かい紙目 + 粗いノイズで線を途切れさせる（シード固定で再現可能）
-        let mut nrng = Rng64::seed_from(p.seed ^ 0x70656e63); // "penc"
-        let mut noise = Gray::new(cw, ch);
-        for v in &mut noise.data {
-            *v = nrng.random();
-        }
-        let fine = gaussian_blur(&noise, 0.9);
-        let coarse = gaussian_blur(&noise, 3.5);
-        let norm = |g: &Gray| -> (f32, f32) {
-            let mn = g.data.iter().cloned().fold(f32::MAX, f32::min);
-            let mx = g.data.iter().cloned().fold(f32::MIN, f32::max);
-            (mn, (mx - mn).max(1e-8))
-        };
-        let (fmn, frange) = norm(&fine);
-        let (cmn, crange) = norm(&coarse);
-        for i in 0..cw * ch {
-            let nf = (fine.data[i] - fmn) / frange;
-            let nc = (coarse.data[i] - cmn) / crange;
-            let grain = (0.60 + 0.40 * nf) * (0.55 + 0.45 * smoothstep(0.25, 0.75, nc));
-            m.data[i] = (m.data[i] * grain).clamp(0.0, 1.0);
-        }
-
-        let mut vis = RgbImage::new(cw as u32, ch as u32);
-        for (i, px) in vis.pixels_mut().enumerate() {
-            let v = ((1.0 - m.data[i]) * 255.0) as u8;
-            px.0 = [v, v, v];
-        }
-        stage!("line_art", vis);
-        Some(m)
-    } else {
-        None
-    };
+    // 輪郭線は最終出力解像度で抽出・合成する（キャンバス解像度で描いて拡大すると
+    // 太くぼやけるため）。実装は final_img 生成後を参照
 
     let bs = p.brush_size;
     let engine = PaintEngine::new(&target, &theta, &coh, &dens);
@@ -522,25 +457,6 @@ pub fn run_pipeline(
         }
     }
 
-    // 輪郭線（鉛筆下書き）を重ねる。インクはグラファイトの青灰色。
-    // ボケ領域（フォーカス重みが低い）では線も薄くして被写界深度と整合させる
-    if let Some(mask) = &line_mask {
-        const GRAPHITE: [f32; 3] = [0.16, 0.16, 0.20];
-        for i in 0..cw * ch {
-            let mut a = mask.data[i].clamp(0.0, 1.0) * p.line_strength;
-            if p.depth_detail > 0.0 {
-                a *= 1.0 - (1.0 - focus_w.data[i]) * p.depth_detail;
-            }
-            if a <= 0.0 {
-                continue;
-            }
-            let px = &mut canvas.data[i];
-            for c in 0..3 {
-                px[c] = px[c] * (1.0 - a) + GRAPHITE[c] * a;
-            }
-        }
-    }
-
     let low = canvas.to_u8_01();
     let mut final_img = if p.out_long as usize > cw.max(ch) {
         let s = p.out_long as f32 / cw.max(ch) as f32;
@@ -552,6 +468,114 @@ pub fn run_pipeline(
     } else {
         low.clone()
     };
+    // --- 輪郭線（鉛筆下書き）: 最終出力解像度で抽出して重ねる ---
+    // 元画像 → Sobel → 非最大抑制（Canny 方式）で 1px に細線化するため、
+    // 拡大による太り・ぼやけ・二重線が出ない
+    if p.line_strength > 0.0 {
+        let (fw, fh) = (final_img.width() as usize, final_img.height() as usize);
+        let smoothstep = |e0: f32, e1: f32, x: f32| -> f32 {
+            let t = ((x - e0) / (e1 - e0)).clamp(0.0, 1.0);
+            t * t * (3.0 - 2.0 * t)
+        };
+        let src = resize_rgb_bilinear(img_rgb, fw as u32, fh as u32);
+        let mut gray_hi = Gray::new(fw, fh);
+        for (i, px) in src.pixels().enumerate() {
+            gray_hi.data[i] =
+                (px.0[0] as f32 * 0.299 + px.0[1] as f32 * 0.587 + px.0[2] as f32 * 0.114)
+                    / 255.0;
+        }
+        // 平滑化はスケールに比例させ、キャンバス解像度と同じ「見え」のエッジを拾う
+        let scale = (fw.max(fh) as f32 / cw.max(ch) as f32).max(1.0);
+        let g1 = gaussian_blur(&gray_hi, 1.0 * scale);
+        let egx = crate::buf::sobel_x(&g1);
+        let egy = crate::buf::sobel_y(&g1);
+        let mut mag = Gray::new(fw, fh);
+        for i in 0..fw * fh {
+            mag.data[i] = egx.data[i].hypot(egy.data[i]);
+        }
+        // 非最大抑制: 勾配方向に沿って極大の画素だけ残す → 1px の稜線
+        let mut m = Gray::new(fw, fh);
+        for y in 1..fh - 1 {
+            for x in 1..fw - 1 {
+                let i = y * fw + x;
+                let v = mag.data[i];
+                if v <= 1e-6 {
+                    continue;
+                }
+                let a = egy.data[i].atan2(egx.data[i]).to_degrees();
+                let a = if a < 0.0 { a + 180.0 } else { a };
+                let ((x1, y1), (x2, y2)) = if !(22.5..157.5).contains(&a) {
+                    ((x + 1, y), (x - 1, y))
+                } else if a < 67.5 {
+                    ((x + 1, y + 1), (x - 1, y - 1))
+                } else if a < 112.5 {
+                    ((x, y + 1), (x, y - 1))
+                } else {
+                    ((x - 1, y + 1), (x + 1, y - 1))
+                };
+                if v >= mag.at(x1, y1) && v >= mag.at(x2, y2) {
+                    m.data[i] = v;
+                }
+            }
+        }
+        // 正規化はゼロ以外（稜線上）の分位数で行う
+        let nonzero: Vec<f32> = m.data.iter().cloned().filter(|&v| v > 1e-6).collect();
+        if !nonzero.is_empty() {
+            let p90 = quantile(&nonzero, 0.90) + 1e-8;
+            for v in &mut m.data {
+                *v = smoothstep(0.28, 0.70, *v / p90);
+            }
+            // 太さ: 1（≒1px）基準。1 超は膨張、1 未満はべき乗で締める
+            if p.line_width > 1.0 {
+                m = dilate(&m, p.line_width - 1.0);
+            }
+            let mut m = gaussian_blur(&m, 0.6);
+            if p.line_width < 1.0 {
+                let e = (1.0 / p.line_width.max(0.3)).min(3.5);
+                for v in &mut m.data {
+                    *v = v.powf(e);
+                }
+            }
+            // 質感はごく薄い紙目のみ（強い途切れノイズは汚くなるため廃止）
+            let mut nrng = Rng64::seed_from(p.seed ^ 0x70656e63); // "penc"
+            let mut noise = Gray::new(fw, fh);
+            for v in &mut noise.data {
+                *v = nrng.random();
+            }
+            let fine = gaussian_blur(&noise, 1.0);
+            let mn = fine.data.iter().cloned().fold(f32::MAX, f32::min);
+            let mx = fine.data.iter().cloned().fold(f32::MIN, f32::max);
+            let range = (mx - mn).max(1e-8);
+            for i in 0..fw * fh {
+                m.data[i] *= 0.78 + 0.22 * (fine.data[i] - mn) / range;
+            }
+
+            let mut vis = RgbImage::new(fw as u32, fh as u32);
+            for (i, px) in vis.pixels_mut().enumerate() {
+                let v = ((1.0 - m.data[i].clamp(0.0, 1.0)) * 255.0) as u8;
+                px.0 = [v, v, v];
+            }
+            stage!("line_art", vis);
+
+            // 合成: インクはグラファイトの青灰色。ボケ領域では焦点重みに応じて薄く
+            let focus_hi = resize_gray_bilinear(&focus_w, fw, fh);
+            const GRAPHITE: [f32; 3] = [0.16 * 255.0, 0.16 * 255.0, 0.20 * 255.0];
+            for (i, px) in final_img.pixels_mut().enumerate() {
+                let mut alpha = m.data[i].clamp(0.0, 1.0) * p.line_strength;
+                if p.depth_detail > 0.0 {
+                    alpha *= 1.0 - (1.0 - focus_hi.data[i]) * p.depth_detail;
+                }
+                if alpha <= 0.0 {
+                    continue;
+                }
+                for c in 0..3 {
+                    px.0[c] =
+                        (px.0[c] as f32 * (1.0 - alpha) + GRAPHITE[c] * alpha).round() as u8;
+                }
+            }
+        }
+    }
+
     // 紙のテクスチャと余白は最終解像度で適用（拡大でボケさせない）
     crate::paper::apply_paper(&mut final_img, p.paper_texture, p.paper_border, p.seed);
     stage!("8_painting", final_img.clone());

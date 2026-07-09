@@ -114,10 +114,12 @@ impl<'a> PaintEngine<'a> {
         const JITTER: f32 = 0.5;
         const MAX_LEN_FACTOR: f32 = 3.0;
         let mut strokes = Vec::new();
-        let mut gy = spacing / 2.0;
-        while gy < self.h as f32 {
-            let mut gx = spacing / 2.0;
-            while gx < self.w as f32 {
+        // 種はキャンバスの外周半グリッド分まで撒く——端のストロークが
+        // 画面外から被さることで、縁に下塗りが露出する「額縁状のムラ」を防ぐ
+        let mut gy = -spacing / 2.0;
+        while gy < self.h as f32 + spacing / 2.0 {
+            let mut gx = -spacing / 2.0;
+            while gx < self.w as f32 + spacing / 2.0 {
                 let x = gx + rng.uniform(-1.0, 1.0) * spacing * JITTER;
                 let y = gy + rng.uniform(-1.0, 1.0) * spacing * JITTER;
                 let xi = (x.clamp(0.0, self.w as f32 - 1.0)) as usize;

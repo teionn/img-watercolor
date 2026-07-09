@@ -29,7 +29,6 @@ pub fn presets() -> Vec<Preset> {
                 wet: 0.28,
                 saturation: 1.3,
                 paper_texture: 0.6,
-                paper_border: 0.05,
                 line_strength: 0.25,
                 brush_size: 17.0,
                 // 水彩専用ブラシ: 大きな面は wash、置き染みは bleed、
