@@ -819,6 +819,7 @@ dependencies = [
  "image",
  "painterly-core",
  "painterly-depth",
+ "painterly-face",
 ]
 
 [[package]]
@@ -832,6 +833,14 @@ dependencies = [
 
 [[package]]
 name = "painterly-depth"
+version = "0.1.0"
+dependencies = [
+ "image",
+ "tract-onnx",
+]
+
+[[package]]
+name = "painterly-face"
 version = "0.1.0"
 dependencies = [
  "image",

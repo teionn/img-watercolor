@@ -104,6 +104,13 @@ struct Args {
     /// 自動検出、それも無ければ組み込みのヒューリスティック推定
     #[arg(long)]
     depth_model: Option<PathBuf>,
+    /// 顔検出の ONNX モデル（UltraFace）。指定すると顔を検出して face_detail で強化。
+    /// 省略時は models/ultraface_rfb_320.onnx を自動検出
+    #[arg(long)]
+    face_model: Option<PathBuf>,
+    /// 顔検出時のディテール強化の強さ 0..1 [既定: 0.6]
+    #[arg(long)]
+    face_detail: Option<f32>,
     /// フォーカス位置 X（画像上の正規化座標 0..1）。Y とセットで指定
     #[arg(long)]
     focus_x: Option<f32>,
@@ -273,6 +280,27 @@ fn main() {
         }
     };
 
+    // 顔検出モデル: --face-model か models/ の既定パス。あれば顔を検出して強化する
+    let face_model = {
+        let model_path = args.face_model.clone().or_else(|| {
+            let default = PathBuf::from("models/ultraface_rfb_320.onnx");
+            default.exists().then_some(default)
+        });
+        match model_path {
+            Some(path) => match painterly_face::FaceModel::load(&path) {
+                Ok(m) => {
+                    eprintln!("[info] 顔検出モデル: {}", path.display());
+                    Some(m)
+                }
+                Err(e) => {
+                    eprintln!("[error] 顔検出モデルを読み込めません: {e}");
+                    std::process::exit(1);
+                }
+            },
+            None => None,
+        }
+    };
+
     for path in &args.images {
         let img = match image::open(path) {
             Ok(i) => i.to_rgb8(),
@@ -295,6 +323,17 @@ fn main() {
                 Err(e) => {
                     eprintln!("[warn] 深度推定に失敗、組み込み推定を使用: {e}");
                 }
+            }
+        }
+        if let Some(fm) = &face_model {
+            match fm.detect(&img, 0.7) {
+                Ok(regions) if !regions.is_empty() => {
+                    eprintln!("[info] 顔を {} 個検出", regions.len());
+                    params_img.face_regions = regions;
+                    params_img.face_detail = args.face_detail.unwrap_or(0.6);
+                }
+                Ok(_) => eprintln!("[info] 顔は検出されませんでした"),
+                Err(e) => eprintln!("[warn] 顔検出に失敗: {e}"),
             }
         }
         match painterly_core::run_pipeline(

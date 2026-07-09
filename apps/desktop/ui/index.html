@@ -57,6 +57,13 @@
       <label title="先にプレビュー上で顔をクリックしてフォーカス位置を指定してください">フォーカス部を強化（要クリック） <span id="v-focus_detail">0.00</span>
         <input type="range" id="p-focus_detail" min="0" max="1" step="0.05" value="0" />
       </label>
+      <label class="row" title="UltraFace (ONNX) で顔を自動検出し、顔領域のディテールを強化します">顔を検出して強化
+        <input type="checkbox" id="p-use_face" />
+      </label>
+      <label title="顔検出時のディテール強化の強さ（0 でも検出時は自動で 0.6 になります）">顔ディテール強化 <span id="v-face_detail">0.00</span>
+        <input type="range" id="p-face_detail" min="0" max="1" step="0.05" value="0" />
+      </label>
+      <div id="face-model-state" class="hint"></div>
     </details>
 
     <details class="group" open>

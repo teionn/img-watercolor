@@ -1594,6 +1594,7 @@ dependencies = [
  "image",
  "painterly-core",
  "painterly-depth",
+ "painterly-face",
  "serde",
  "serde_json",
  "tauri",
@@ -2392,6 +2393,14 @@ dependencies = [
 
 [[package]]
 name = "painterly-depth"
+version = "0.1.0"
+dependencies = [
+ "image",
+ "tract-onnx",
+]
+
+[[package]]
+name = "painterly-face"
 version = "0.1.0"
 dependencies = [
  "image",

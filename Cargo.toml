@@ -6,6 +6,7 @@ members = [
     "crates/painterly-core",
     "crates/painterly-cli",
     "crates/painterly-depth",
+    "crates/painterly-face",
     "crates/painterly-ffi",
 ]
 

@@ -65,6 +65,12 @@ pub struct Params {
     /// フォーカス点まわりのディテール強化 0..1。クリック位置の近傍で密度を上げ、
     /// 小さいハードブラシ・細かいタッチにする（人物の顔向け）。focus_point 必須
     pub focus_detail: f32,
+    /// 顔検出によるディテール強化 0..1。face_regions の各領域で密度を上げ、
+    /// 目・鼻・口が潰れないよう細かく描く。検出は外部レイヤー（tract）が行い、
+    /// 正規化ボックス [x0,y0,x1,y1] を face_regions に渡す規約
+    pub face_detail: f32,
+    /// 検出済みの顔領域（正規化座標 [x0,y0,x1,y1]、0..1）。空なら顔強化は無効
+    pub face_regions: Vec<[f32; 4]>,
     /// 細部の輝度を最終出力に戻す強さ 0..1。元画像の高周波（目鼻口の陰影）を
     /// 薄く重ね、ストロークで潰れた細部を透かす
     pub detail_overlay: f32,
@@ -162,6 +168,8 @@ impl Default for Params {
             color_fidelity: 0.5,
             detail_retention: 0.4,
             focus_detail: 0.0,
+            face_detail: 0.0,
+            face_regions: Vec::new(),
             detail_overlay: 0.0,
             hard_brush: "triangle".into(),
             standard_brush: "flat".into(),
@@ -342,6 +350,29 @@ pub fn run_pipeline(
                     let w = (-d2 * inv2s2).exp();
                     let i = y * cw + x;
                     dens.data[i] = (dens.data[i] * (1.0 + 1.5 * p.focus_detail * w)).clamp(0.0, 1.2);
+                }
+            }
+        }
+    }
+
+    // 顔検出によるディテール強化: 検出済みの各顔ボックス内で密度を上げる。
+    // ボックス中心を頂点に楕円状に減衰させ、輪郭付近まで自然に効かせる
+    if p.face_detail > 0.0 {
+        for &[x0, y0, x1, y1] in &p.face_regions {
+            let (x0, x1) = (x0.min(x1), x0.max(x1));
+            let (y0, y1) = (y0.min(y1), y0.max(y1));
+            let bcx = (x0 + x1) * 0.5 * cw as f32;
+            let bcy = (y0 + y1) * 0.5 * ch as f32;
+            // 半径はボックスの半幅・半高。少し広げて縁も含める
+            let rx = (((x1 - x0) * 0.5 * cw as f32) * 1.1).max(4.0);
+            let ry = (((y1 - y0) * 0.5 * ch as f32) * 1.1).max(4.0);
+            for y in 0..ch {
+                for x in 0..cw {
+                    let nx = (x as f32 - bcx) / rx;
+                    let ny = (y as f32 - bcy) / ry;
+                    let w = (-(nx * nx + ny * ny) * 1.5).exp(); // 楕円ガウス
+                    let i = y * cw + x;
+                    dens.data[i] = (dens.data[i] * (1.0 + 1.5 * p.face_detail * w)).clamp(0.0, 1.2);
                 }
             }
         }
@@ -939,6 +970,17 @@ mod tests {
         let mut on = Params::default();
         on.focus_point = Some((0.5, 0.5));
         on.focus_detail = 1.0;
+        assert_ne!(paint_bytes(&off), paint_bytes(&on));
+    }
+
+    #[test]
+    fn face_region_boost_changes_output() {
+        let mut off = Params::default();
+        off.face_regions = vec![[0.25, 0.25, 0.75, 0.75]];
+        off.face_detail = 0.0;
+        let mut on = Params::default();
+        on.face_regions = vec![[0.25, 0.25, 0.75, 0.75]];
+        on.face_detail = 1.0;
         assert_ne!(paint_bytes(&off), paint_bytes(&on));
     }
 }

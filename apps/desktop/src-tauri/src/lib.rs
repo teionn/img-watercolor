@@ -19,6 +19,8 @@ struct RenderState {
     final_image: Mutex<Option<RgbImage>>,
     /// ロード済みのニューラル深度モデル（Depth Anything V2 等）
     depth_model: Mutex<Option<painterly_depth::DepthModel>>,
+    /// ロード済みの顔検出モデル（UltraFace）
+    face_model: Mutex<Option<painterly_face::FaceModel>>,
     /// 直近のレンダリングで生成された process.gif のパス
     last_gif: Mutex<Option<std::path::PathBuf>>,
 }
@@ -55,6 +57,24 @@ fn resolve_depth(
         }
     }
     Ok(())
+}
+
+/// 顔検出モデルが有効なら顔を検出し、face_regions に設定する。
+/// face_detail が 0 のときは既定 0.6 を入れて実際に効くようにする
+fn resolve_faces(p: &mut Params, img: &RgbImage, use_model: bool, state: &RenderState) {
+    if !use_model {
+        return;
+    }
+    if let Some(model) = state.face_model.lock().unwrap().as_ref() {
+        if let Ok(regions) = model.detect(img, 0.7) {
+            if !regions.is_empty() {
+                p.face_regions = regions;
+                if p.face_detail <= 0.0 {
+                    p.face_detail = 0.6;
+                }
+            }
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -113,6 +133,9 @@ struct ParamsDto {
     process_gif: bool,
     /// ニューラル深度モデルを使う（load_depth_model 済みのとき有効）
     use_depth_model: bool,
+    /// 顔検出モデルを使う（load_face_model 済みのとき有効）
+    #[serde(default)]
+    use_face_model: bool,
     /// 外部デプスマップ PNG のパス（白 = 手前）。指定時はモデルより優先
     external_depth_path: Option<String>,
 }
@@ -174,6 +197,7 @@ impl Default for ParamsDto {
             side_sample_prob: p.side_sample_prob,
             process_gif: false,
             use_depth_model: false,
+            use_face_model: false,
             external_depth_path: None,
         }
     }
@@ -271,6 +295,7 @@ impl From<&Params> for ParamsDto {
             side_sample_prob: p.side_sample_prob,
             process_gif: false,
             use_depth_model: false,
+            use_face_model: false,
             external_depth_path: None,
         }
     }
@@ -382,6 +407,7 @@ fn start_render(
             let mut brushes = Brushes::new();
             resolve_brushes(&mut p, &mut brushes)?;
             resolve_depth(&mut p, &img, &dto.external_depth_path, dto.use_depth_model, &state)?;
+            resolve_faces(&mut p, &img, dto.use_face_model, &state);
             // 過程 GIF は一時ディレクトリに書き出し、保存時にコピーする
             let out_dir = if p.process_gif {
                 let dir = std::env::temp_dir().join("img-watercolor-gui");
@@ -458,6 +484,27 @@ fn load_depth_model(state: State<'_, RenderState>, path: Option<String>) -> Resu
     Ok(path.display().to_string())
 }
 
+/// 顔検出モデル（UltraFace）を読み込む。path 未指定なら models/ の既定パスを自動検出
+#[tauri::command]
+fn load_face_model(state: State<'_, RenderState>, path: Option<String>) -> Result<String, String> {
+    let path = match path {
+        Some(p) => std::path::PathBuf::from(p),
+        None => {
+            let default = std::path::PathBuf::from("models/ultraface_rfb_320.onnx");
+            if !default.exists() {
+                return Err(
+                    "models/ultraface_rfb_320.onnx が見つかりません（scripts/fetch_models.sh で取得するか、.onnx を指定してください）"
+                        .into(),
+                );
+            }
+            default
+        }
+    };
+    let model = painterly_face::FaceModel::load(&path)?;
+    *state.face_model.lock().unwrap() = Some(model);
+    Ok(path.display().to_string())
+}
+
 /// 直近のレンダリングで生成された process.gif を保存する
 #[tauri::command]
 fn save_process_gif(state: State<'_, RenderState>, dest: String) -> Result<(), String> {
@@ -484,6 +531,7 @@ pub fn run() {
             save_image,
             get_presets,
             load_depth_model,
+            load_face_model,
             save_process_gif
         ])
         .run(tauri::generate_context!())

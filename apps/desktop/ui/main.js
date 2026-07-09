@@ -36,7 +36,7 @@ let replayTimer = null;
 let finalDataUrl = null;
 
 const SLIDERS = [
-  "color_fidelity", "detail_retention", "detail_overlay", "focus_detail",
+  "color_fidelity", "detail_retention", "detail_overlay", "focus_detail", "face_detail",
   "pixels", "resolution", "palette", "posterize_blur", "normal_blur",
   "strokes_scale", "wet", "saturation", "depth_detail", "out_long",
   "focus_range", "detail_min", "detail_max", "line_strength", "line_width",
@@ -62,6 +62,7 @@ const PARAM_HELP = {
   detail_retention: "フローが不明瞭な平坦部（顔の肌など）でストロークを短くし、長い渦巻きストロークが目・鼻・口を潰すのを防ぐ",
   detail_overlay: "元画像の高周波な陰影（目鼻口）を最終出力に薄く重ね、ストロークで潰れた細部を透かす",
   focus_detail: "プレビューでクリックしたフォーカス位置の近傍で密度を上げ、小さいブラシ・細かいタッチにする（顔向け）",
+  face_detail: "顔検出（下のチェック）で見つかった顔領域のディテールを強化する強さ。検出時に 0 なら自動で 0.6 になる",
   strokes_scale: "ストローク本数の倍率",
   wet: "筆を置くとき下の色と混ざる比率（ウェットブレンディング）",
   saturation: "彩度の倍率",
@@ -376,6 +377,34 @@ $("p-use_depth").addEventListener("change", async (e) => {
   }
 });
 
+// --- 顔検出モデル（UltraFace / ONNX） ---
+let faceModelLoaded = false;
+$("p-use_face").addEventListener("change", async (e) => {
+  const chk = e.target;
+  if (!chk.checked || faceModelLoaded) {
+    scheduleAutoPreview();
+    return;
+  }
+  const stateEl = $("face-model-state");
+  stateEl.textContent = "顔検出モデルを読み込み中…";
+  try {
+    const path = await invoke("load_face_model", { path: null }).catch(async () => {
+      const picked = await dialog.open({
+        multiple: false,
+        filters: [{ name: "ONNX モデル", extensions: ["onnx"] }],
+      });
+      if (typeof picked !== "string") throw new Error("キャンセルされました");
+      return await invoke("load_face_model", { path: picked });
+    });
+    faceModelLoaded = true;
+    stateEl.textContent = `顔検出モデル: ${String(path).split(/[\\/]/).pop()}`;
+    scheduleAutoPreview();
+  } catch (err) {
+    chk.checked = false;
+    stateEl.textContent = `読み込めません: ${err}`;
+  }
+});
+
 // --- 外部デプス PNG（白 = 手前。指定時はモデルより優先） ---
 $("btn-depth-file").addEventListener("click", async () => {
   const path = await dialog.open({
@@ -448,6 +477,7 @@ function collectParams() {
     side_sample_prob: num("side_sample_prob"),
     process_gif: $("p-process_gif").checked,
     use_depth_model: depthModelLoaded && $("p-use_depth").checked,
+    use_face_model: faceModelLoaded && $("p-use_face").checked,
     external_depth_path: externalDepthPath,
     focus_range: num("focus_range"),
     detail_min: num("detail_min"),
