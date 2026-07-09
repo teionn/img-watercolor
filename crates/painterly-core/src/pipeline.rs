@@ -82,6 +82,17 @@ pub struct Params {
     pub line_strength: f32,
     /// 輪郭線の太さ（キャンバス px、半径）
     pub line_width: f32,
+    /// 紙のテクスチャの強さ 0..1（0 = なし）。最終出力に紙目を乗せる。
+    /// pigment > 0 のときは粒状化（顔料が紙の目に沈む）の強さも兼ねる
+    pub paper_texture: f32,
+    /// 紙の余白（短辺に対する比率、0 = なし）。荒れたエッジの白フチを残す
+    pub paper_border: f32,
+    /// 透明水彩度 0..1（Curtis 1997 のグレーズ近似）。
+    /// 0 = 不透明な油彩、1 = 完全な透明顔料（紙の白が透ける減法混色）。
+    /// 下地も mean 色 → 紙白 に連動する
+    pub pigment: f32,
+    /// エッジ暗色化 0..1。塗りの縁に顔料が溜まる水彩特有の縁取り
+    pub edge_darken: f32,
 }
 
 impl Default for Params {
@@ -116,6 +127,10 @@ impl Default for Params {
             detail_max: 1.15,
             line_strength: 0.4,
             line_width: 1.0,
+            paper_texture: 0.35,
+            paper_border: 0.0,
+            pigment: 0.0,
+            edge_darken: 0.0,
         }
     }
 }
@@ -376,7 +391,9 @@ pub fn run_pipeline(
         }
     };
 
-    // 下塗り: キャンバス = 画面の平均色、大きなソフトブラシで敷く
+    // 下塗り: キャンバス = 画面の平均色、大きなソフトブラシで敷く。
+    // 透明水彩（pigment > 0）では紙の白へ寄せる——グレーズは暗くする方向にしか
+    // 働かないので、下地が明るくないと発色しない
     let mean = {
         let mut m = [0.0f64; 3];
         for c in &target.data {
@@ -387,7 +404,37 @@ pub fn run_pipeline(
         let n = target.data.len() as f64;
         [(m[0] / n) as f32, (m[1] / n) as f32, (m[2] / n) as f32]
     };
-    let mut canvas = Rgb32 { w: cw, h: ch, data: vec![mean; cw * ch] };
+    const PAPER_WHITE: [f32; 3] = [0.97, 0.965, 0.945];
+    let base = [
+        mean[0] * (1.0 - p.pigment) + PAPER_WHITE[0] * p.pigment,
+        mean[1] * (1.0 - p.pigment) + PAPER_WHITE[1] * p.pigment,
+        mean[2] * (1.0 - p.pigment) + PAPER_WHITE[2] * p.pigment,
+    ];
+    let mut canvas = Rgb32 { w: cw, h: ch, data: vec![base; cw * ch] };
+
+    // 水彩設定と粒状化用の紙目（キャンバス解像度、シード固定）
+    let wc = strokes::WatercolorCfg {
+        pigment: p.pigment,
+        edge_darken: p.edge_darken,
+        granulation: if p.pigment > 0.0 { p.paper_texture } else { 0.0 },
+    };
+    let grain = if wc.granulation > 0.0 {
+        let mut grng = Rng64::seed_from(p.seed ^ 0x6772616e); // "gran"
+        let mut n = Gray::new(cw, ch);
+        for v in &mut n.data {
+            *v = grng.random();
+        }
+        let mut n = gaussian_blur(&n, 1.0);
+        let mn = n.data.iter().cloned().fold(f32::MAX, f32::min);
+        let mx = n.data.iter().cloned().fold(f32::MIN, f32::max);
+        let range = (mx - mn).max(1e-8);
+        for v in &mut n.data {
+            *v = (*v - mn) / range;
+        }
+        Some(n)
+    } else {
+        None
+    };
 
     let under = engine.make_strokes(
         &mut rng,
@@ -461,6 +508,8 @@ pub fn run_pipeline(
                 layer,
                 w_,
                 brushes,
+                &wc,
+                grain.as_ref(),
                 if use_cb { Some(&mut cb) } else { None },
             );
         }
@@ -486,7 +535,7 @@ pub fn run_pipeline(
     }
 
     let low = canvas.to_u8_01();
-    let final_img = if p.out_long as usize > cw.max(ch) {
+    let mut final_img = if p.out_long as usize > cw.max(ch) {
         let s = p.out_long as f32 / cw.max(ch) as f32;
         resize_rgb_cubic(
             &low,
@@ -496,6 +545,8 @@ pub fn run_pipeline(
     } else {
         low.clone()
     };
+    // 紙のテクスチャと余白は最終解像度で適用（拡大でボケさせない）
+    crate::paper::apply_paper(&mut final_img, p.paper_texture, p.paper_border, p.seed);
     stage!("8_painting", final_img.clone());
 
     if p.process_gif && !frames.is_empty() {

@@ -39,7 +39,9 @@ const SLIDERS = [
   "pixels", "resolution", "palette", "posterize_blur", "normal_blur",
   "brush_size", "strokes_scale", "wet", "saturation", "depth_detail", "out_long",
   "focus_range", "detail_min", "detail_max", "line_strength", "line_width",
+  "paper_texture", "paper_border", "pigment", "edge_darken",
 ];
+const SELECTS = ["hard_brush", "standard_brush", "soft_brush", "color_space"];
 
 // フォーカス位置（プレビュー上の正規化座標）。クリックで設定、ダブルクリックで解除
 let focusPoint = null;
@@ -82,6 +84,10 @@ function collectParams() {
     detail_max: num("detail_max"),
     line_strength: num("line_strength"),
     line_width: num("line_width"),
+    paper_texture: num("paper_texture"),
+    paper_border: num("paper_border"),
+    pigment: num("pigment"),
+    edge_darken: num("edge_darken"),
   };
 }
 
@@ -254,3 +260,44 @@ preview.addEventListener("click", (e) => {
 });
 
 preview.addEventListener("dblclick", clearFocus);
+
+// --- プリセット ---
+const presetSelect = $("preset-select");
+let presets = [];
+
+async function loadPresets() {
+  try {
+    presets = await invoke("get_presets");
+  } catch {
+    return; // 旧バックエンドでは黙って無効化
+  }
+  for (const p of presets) {
+    const opt = document.createElement("option");
+    opt.value = p.name;
+    opt.textContent = p.name;
+    opt.title = p.description;
+    presetSelect.appendChild(opt);
+  }
+  presetSelect.addEventListener("change", () => {
+    const p = presets.find((x) => x.name === presetSelect.value);
+    if (p) applyParams(p.params);
+    presetSelect.title = p ? p.description : "";
+  });
+}
+
+// プリセットの値を各コントロールへ反映（フォーカス位置は維持）
+function applyParams(params) {
+  for (const name of SLIDERS) {
+    if (params[name] === undefined) continue;
+    const input = $(`p-${name}`);
+    input.value = params[name];
+    input.dispatchEvent(new Event("input")); // ラベル更新
+  }
+  for (const name of SELECTS) {
+    if (params[name] !== undefined) $(`p-${name}`).value = params[name];
+  }
+  $("p-depth_invert").checked = !!params.depth_invert;
+  $("p-seed").value = params.seed ?? 42;
+}
+
+loadPresets();

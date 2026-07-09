@@ -19,9 +19,12 @@ pub mod density;
 pub mod depth;
 pub mod flowmap;
 pub mod palette;
+pub mod paper;
 pub mod pipeline;
+pub mod presets;
 pub mod rng;
 pub mod strokes;
 
 pub use brushes::{Brushes, BUILTIN_BRUSHES};
 pub use pipeline::{run_pipeline, Callbacks, Params, PipelineResult};
+pub use presets::{preset, presets, Preset};

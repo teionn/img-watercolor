@@ -10,6 +10,25 @@ struct ParamsSheet: View {
     var body: some View {
         NavigationStack {
             Form {
+                Section("プリセット") {
+                    ForEach(presets(), id: \.name) { preset in
+                        Button {
+                            // フォーカス位置は維持したまま適用
+                            let fx = params.focusX
+                            let fy = params.focusY
+                            params = preset.params
+                            params.focusX = fx
+                            params.focusY = fy
+                        } label: {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(preset.name)
+                                Text(preset.description)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
                 Section("解像度") {
                     intSlider("採色解像度", value: $params.pixels, range: 32...256, step: 8, unit: "px")
                     intSlider("キャンバス解像度", value: $params.resolution, range: 120...720, step: 20, unit: "px")
@@ -50,6 +69,12 @@ struct ParamsSheet: View {
                 Section("輪郭線") {
                     floatSlider("強さ", value: $params.lineStrength, range: 0...1, step: 0.05)
                     floatSlider("太さ", value: $params.lineWidth, range: 0.5...3, step: 0.1)
+                }
+                Section("紙 / 水彩") {
+                    floatSlider("透明水彩", value: $params.pigment, range: 0...1, step: 0.05)
+                    floatSlider("エッジ濃縮", value: $params.edgeDarken, range: 0...1, step: 0.05)
+                    floatSlider("紙の質感", value: $params.paperTexture, range: 0...1, step: 0.05)
+                    floatSlider("紙の余白", value: $params.paperBorder, range: 0...0.12, step: 0.005)
                 }
                 Section("ブラシ") {
                     brushPicker("ハード", selection: $params.hardBrush)

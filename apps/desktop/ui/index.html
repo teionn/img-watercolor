@@ -15,6 +15,12 @@
     </div>
 
     <div class="group">
+      <label class="row">プリセット
+        <select id="preset-select" title=""></select>
+      </label>
+    </div>
+
+    <div class="group">
       <label>採色解像度 <span id="v-pixels">96</span>px
         <input type="range" id="p-pixels" min="32" max="256" step="8" value="96" />
       </label>
@@ -66,6 +72,18 @@
       </label>
       <label>輪郭線の太さ <span id="v-line_width">1.0</span>px
         <input type="range" id="p-line_width" min="0.5" max="3" step="0.1" value="1" />
+      </label>
+      <label>透明水彩 <span id="v-pigment">0.00</span>
+        <input type="range" id="p-pigment" min="0" max="1" step="0.05" value="0" />
+      </label>
+      <label>エッジ濃縮 <span id="v-edge_darken">0.00</span>
+        <input type="range" id="p-edge_darken" min="0" max="1" step="0.05" value="0" />
+      </label>
+      <label>紙の質感 <span id="v-paper_texture">0.35</span>
+        <input type="range" id="p-paper_texture" min="0" max="1" step="0.05" value="0.35" />
+      </label>
+      <label>紙の余白 <span id="v-paper_border">0.00</span>
+        <input type="range" id="p-paper_border" min="0" max="0.12" step="0.005" value="0" />
       </label>
     </div>
 

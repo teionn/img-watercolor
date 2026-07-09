@@ -96,6 +96,18 @@ pub struct RenderParams {
     /// 輪郭線の太さ（キャンバス px）
     #[uniffi(default = 1.0)]
     pub line_width: f32,
+    /// 紙のテクスチャの強さ 0..1
+    #[uniffi(default = 0.35)]
+    pub paper_texture: f32,
+    /// 紙の余白（短辺に対する比率、0 = なし）
+    #[uniffi(default = 0.0)]
+    pub paper_border: f32,
+    /// 透明水彩度 0..1（0 = 油彩、1 = 透明顔料のグレーズ）
+    #[uniffi(default = 0.0)]
+    pub pigment: f32,
+    /// エッジ暗色化 0..1（塗りの縁に顔料が溜まる）
+    #[uniffi(default = 0.0)]
+    pub edge_darken: f32,
 }
 
 impl Default for RenderParams {
@@ -127,6 +139,10 @@ impl Default for RenderParams {
             detail_max: p.detail_max,
             line_strength: p.line_strength,
             line_width: p.line_width,
+            paper_texture: p.paper_texture,
+            paper_border: p.paper_border,
+            pigment: p.pigment,
+            edge_darken: p.edge_darken,
         }
     }
 }
@@ -157,6 +173,10 @@ impl From<RenderParams> for Params {
             detail_max: d.detail_max,
             line_strength: d.line_strength,
             line_width: d.line_width,
+            paper_texture: d.paper_texture,
+            paper_border: d.paper_border,
+            pigment: d.pigment,
+            edge_darken: d.edge_darken,
             external_depth: d
                 .depth_image
                 .and_then(|bytes| image::load_from_memory(&bytes).ok())
@@ -214,6 +234,60 @@ fn encode_png_preview(img: &RgbImage, max_side: u32) -> Result<Vec<u8>, Painterl
 #[uniffi::export]
 pub fn default_params() -> RenderParams {
     RenderParams::default()
+}
+
+/// 名前付きプリセット（UI で 1 タップ適用する用）
+#[derive(uniffi::Record)]
+pub struct PresetInfo {
+    pub name: String,
+    pub description: String,
+    pub params: RenderParams,
+}
+
+#[uniffi::export]
+pub fn presets() -> Vec<PresetInfo> {
+    painterly_core::presets()
+        .iter()
+        .map(|p| {
+            // Params → RenderParams（フォーカス位置と外部デプスはプリセット対象外）
+            let d = &p.params;
+            PresetInfo {
+                name: p.name.to_string(),
+                description: p.description.to_string(),
+                params: RenderParams {
+                    pixels: d.pixels,
+                    resolution: d.resolution,
+                    palette: d.palette as u32,
+                    color_space: d.color_space.clone(),
+                    posterize_blur: d.posterize_blur,
+                    normal_blur: d.normal_blur,
+                    brush_size: d.brush_size,
+                    hard_brush: d.hard_brush.clone(),
+                    standard_brush: d.standard_brush.clone(),
+                    soft_brush: d.soft_brush.clone(),
+                    strokes_scale: d.strokes_scale,
+                    wet: d.wet,
+                    saturation: d.saturation,
+                    out_long: d.out_long,
+                    seed: d.seed,
+                    depth_detail: d.depth_detail,
+                    depth_invert: d.depth_invert,
+                    depth_image: None,
+                    focus_x: None,
+                    focus_y: None,
+                    focus_range: d.focus_range,
+                    detail_min: d.detail_min,
+                    detail_max: d.detail_max,
+                    line_strength: d.line_strength,
+                    line_width: d.line_width,
+                    paper_texture: d.paper_texture,
+                    paper_border: d.paper_border,
+                    pigment: d.pigment,
+                    edge_darken: d.edge_darken,
+                },
+            }
+        })
+        .collect()
 }
 
 /// 組み込みブラシ名の一覧

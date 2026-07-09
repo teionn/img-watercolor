@@ -87,6 +87,11 @@ cargo run --release -p painterly-cli -- input/cat.png   # CLI（run.py と同じ
 cd apps/desktop/src-tauri && cargo tauri dev            # デスクトップアプリ（Tauri 2）
 ```
 
+Rust 版の追加機能 — **水彩表現とプリセット**：
+`--preset 水彩` で透明顔料のグレーズ・エッジ暗色化・粒状化・紙の余白
+（Curtis 1997 の近似、[doc/watercolor.md](doc/watercolor.md)）。
+`--list-presets` で全プリセット（基本 / 水彩 / 鮮やか / 淡彩 / 細密 / ラフ / 鉛筆画）。
+
 Rust 版の追加機能 — **デプスマップによるタッチの粗密制御**：
 奥行きに応じて手前ほど細かいタッチ、奥ほど大きく粗いタッチで描く
 （詳細は [doc/depth.md](doc/depth.md)）。

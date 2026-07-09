@@ -19,7 +19,7 @@ struct RenderState {
     final_image: Mutex<Option<RgbImage>>,
 }
 
-#[derive(Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 #[serde(default)]
 struct ParamsDto {
     pixels: u32,
@@ -46,6 +46,10 @@ struct ParamsDto {
     detail_max: f32,
     line_strength: f32,
     line_width: f32,
+    paper_texture: f32,
+    paper_border: f32,
+    pigment: f32,
+    edge_darken: f32,
 }
 
 impl Default for ParamsDto {
@@ -76,6 +80,10 @@ impl Default for ParamsDto {
             detail_max: p.detail_max,
             line_strength: p.line_strength,
             line_width: p.line_width,
+            paper_texture: p.paper_texture,
+            paper_border: p.paper_border,
+            pigment: p.pigment,
+            edge_darken: p.edge_darken,
         }
     }
 }
@@ -106,9 +114,69 @@ impl From<ParamsDto> for Params {
             detail_max: d.detail_max,
             line_strength: d.line_strength,
             line_width: d.line_width,
+            paper_texture: d.paper_texture,
+            paper_border: d.paper_border,
+            pigment: d.pigment,
+            edge_darken: d.edge_darken,
             ..Params::default()
         }
     }
+}
+
+/// ParamsDto を Params から作る（プリセット送出用）
+impl From<&Params> for ParamsDto {
+    fn from(p: &Params) -> Self {
+        ParamsDto {
+            pixels: p.pixels,
+            resolution: p.resolution,
+            palette: p.palette,
+            color_space: p.color_space.clone(),
+            posterize_blur: p.posterize_blur,
+            normal_blur: p.normal_blur,
+            brush_size: p.brush_size,
+            hard_brush: p.hard_brush.clone(),
+            standard_brush: p.standard_brush.clone(),
+            soft_brush: p.soft_brush.clone(),
+            strokes_scale: p.strokes_scale,
+            wet: p.wet,
+            saturation: p.saturation,
+            out_long: p.out_long,
+            seed: p.seed,
+            depth_detail: p.depth_detail,
+            depth_invert: p.depth_invert,
+            focus_x: None,
+            focus_y: None,
+            focus_range: p.focus_range,
+            detail_min: p.detail_min,
+            detail_max: p.detail_max,
+            line_strength: p.line_strength,
+            line_width: p.line_width,
+            paper_texture: p.paper_texture,
+            paper_border: p.paper_border,
+            pigment: p.pigment,
+            edge_darken: p.edge_darken,
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct PresetDto {
+    name: String,
+    description: String,
+    params: ParamsDto,
+}
+
+/// プリセット一覧（フロントエンドのセレクトボックス用）
+#[tauri::command]
+fn get_presets() -> Vec<PresetDto> {
+    painterly_core::presets()
+        .iter()
+        .map(|p| PresetDto {
+            name: p.name.to_string(),
+            description: p.description.to_string(),
+            params: ParamsDto::from(&p.params),
+        })
+        .collect()
 }
 
 #[derive(Serialize, Clone)]
@@ -244,7 +312,12 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(RenderState::default())
-        .invoke_handler(tauri::generate_handler![load_image, start_render, save_image])
+        .invoke_handler(tauri::generate_handler![
+            load_image,
+            start_render,
+            save_image,
+            get_presets
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

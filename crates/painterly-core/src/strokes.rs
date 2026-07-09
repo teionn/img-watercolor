@@ -176,14 +176,30 @@ impl<'a> PaintEngine<'a> {
     }
 }
 
+/// 水彩表現の設定（Curtis et al., "Computer-Generated Watercolor", SIGGRAPH 1997 の
+/// 3 要素の近似。Waterlogue が参考にしている見た目）。
+/// すべて 0 で従来の油彩（不透明アルファ合成）と同一
+#[derive(Clone, Default)]
+pub struct WatercolorCfg {
+    /// 透明顔料のグレーズ度 0..1。1 に近いほど乗算的な重色（紙の白が透ける）
+    pub pigment: f32,
+    /// エッジ暗色化 0..1。塗りの縁に顔料が溜まって濃くなる
+    pub edge_darken: f32,
+    /// 粒状化 0..1。顔料が紙の目の谷に沈む（grain マップが必要）
+    pub granulation: f32,
+}
+
 /// 明度で暗 → 明 にソートして 1 本ずつスタンプする（油彩の順序: 暗で下塗り、明を後に載せる）。
 /// wet: ウェットブレンディング——筆を置く前にキャンバスの既存色と混ぜる比率。
 /// これでストローク同士が互いに色を「引きずる」。canvas は 0..1 の f32 RGB、in-place 更新。
+/// grain: 紙の目（0..1、canvas と同解像度）。granulation > 0 のとき使う
 pub fn render(
     canvas: &mut Rgb32,
     strokes: &[Stroke],
     wet: f32,
     brushes: &mut Brushes,
+    wc: &WatercolorCfg,
+    grain: Option<&Gray>,
     mut on_stroke: Option<&mut dyn FnMut(usize, &Rgb32)>,
 ) {
     let (w, h) = (canvas.w, canvas.h);
@@ -202,14 +218,21 @@ pub fn render(
                 color[c] = color[c] * (1.0 - wet) + under[c] * wet;
             }
         }
-        draw_stroke(canvas, st, color, brushes);
+        draw_stroke(canvas, st, color, brushes, wc, grain);
         if let Some(cb) = on_stroke.as_deref_mut() {
             cb(i, canvas);
         }
     }
 }
 
-fn draw_stroke(canvas: &mut Rgb32, st: &Stroke, color: [f32; 3], brushes: &mut Brushes) {
+fn draw_stroke(
+    canvas: &mut Rgb32,
+    st: &Stroke,
+    color: [f32; 3],
+    brushes: &mut Brushes,
+    wc: &WatercolorCfg,
+    grain: Option<&Gray>,
+) {
     let (w, h) = (canvas.w as isize, canvas.h as isize);
     let spacing = (st.radius * 0.25).max(1.0);
 
@@ -264,14 +287,36 @@ fn draw_stroke(canvas: &mut Rgb32, st: &Stroke, color: [f32; 3], brushes: &mut B
                 if cx < 0 || cx >= w {
                     continue;
                 }
-                let a = stamp.at(sx as usize, sy as usize) * gain;
+                let s = stamp.at(sx as usize, sy as usize);
+                if s <= 0.0 {
+                    continue;
+                }
+                let mut a = s * gain;
+                // エッジ暗色化: スタンプの縁（alpha の中間帯）で顔料を濃くする。
+                // 4s(1-s) は s=0.5 で最大になるリム関数
+                if wc.edge_darken > 0.0 {
+                    let rim = 4.0 * s * (1.0 - s);
+                    a = (a * (1.0 + wc.edge_darken * rim)).min(1.0);
+                }
+                let idx = cy as usize * canvas.w + cx as usize;
+                // 粒状化: 紙の目の谷（grain が小さい所）で顔料が薄く残る
+                if let (Some(g), true) = (grain, wc.granulation > 0.0) {
+                    a *= 1.0 - wc.granulation * 0.5 * (1.0 - g.data[idx]);
+                }
                 if a <= 0.0 {
                     continue;
                 }
-                let idx = cy as usize * canvas.w + cx as usize;
                 let px = &mut canvas.data[idx];
                 for c in 0..3 {
-                    px[c] = px[c] * (1.0 - a) + color[c] * a;
+                    // 不透明（アルファ合成）と透明グレーズを pigment でブレンドする。
+                    // グレーズは min(下地, 顔料色) の darken-only——単純な乗算だと
+                    // ストロークの重なりで色が際限なく沈む（冪等でない）が、
+                    // min なら同色の重ね塗りで暗くならず、明るくもならない（= 水彩。
+                    // 白は絵の具でなく紙の白）。縁の暗色化は edge_darken が担う
+                    let opaque = color[c];
+                    let glaze = px[c].min(color[c]);
+                    let paint = opaque * (1.0 - wc.pigment) + glaze * wc.pigment;
+                    px[c] = px[c] * (1.0 - a) + paint * a;
                 }
             }
         }
